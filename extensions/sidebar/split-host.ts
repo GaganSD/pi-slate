@@ -13,8 +13,6 @@ export type SplitHost<T> = {
 
 export function hasForeignSplitOwner(host: object): boolean {
   const rec = host as Record<symbol, unknown>;
-  const ours = rec[SPLIT_OWNER] !== undefined || rec[SET_LAYOUT_ROOT] !== undefined;
-  if (ours) return false;
   return rec[FOREIGN_SPLIT_OWNER] !== undefined || rec[FOREIGN_SET_LAYOUT_ROOT] !== undefined;
 }
 

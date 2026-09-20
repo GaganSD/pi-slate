@@ -12,7 +12,7 @@ import {
 } from "./layout.ts";
 import { bindSplitHost, hasForeignSplitOwner } from "./split-host.ts";
 
-const SIDEBAR_SPLIT = Symbol.for("pi-extensions.sidebar.split");
+const SIDEBAR_SPLIT = Symbol("sidebar-split");
 
 class SidebarGutter implements Component {
   private readonly pane: Component;

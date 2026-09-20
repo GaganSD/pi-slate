@@ -88,6 +88,20 @@ test("foreign setLayoutRoot symbol fails closed", () => {
   assert.equal(host.layoutRoot, chat);
 });
 
+test("stale local symbols plus a foreign owner still fail closed", () => {
+  const chat = { id: "chat" };
+  const host = Object.assign(createHost(chat), {
+    [SPLIT_OWNER]: {},
+    [SET_LAYOUT_ROOT]: (component: Node | undefined) => {
+      host.layoutRoot = component;
+    },
+    [Symbol.for("pi-minimal-ui.sidebar-split-owner")]: {},
+  });
+  assert.equal(hasForeignSplitOwner(host), true);
+  assert.equal(bindSplitHost(host, wrap("pane"), unwrap), undefined);
+  assert.equal(host.layoutRoot, chat);
+});
+
 test("same-package remount still works when we already own the root", () => {
   const chat = { id: "chat" };
   const host = createHost(chat);
