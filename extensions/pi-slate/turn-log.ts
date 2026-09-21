@@ -1,20 +1,13 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { compactDisplayText } from "./layout.ts";
-import {
-  eventsForFilter,
-  filterLabel,
-  isShellTool,
-  type TurnEvent,
-  type TurnFilter,
-} from "./turn-impact.ts";
+import { isShellTool, type TurnEvent } from "./turn-impact.ts";
 import type { WorkspaceView } from "./workspace.ts";
 
 export class TurnLogView implements WorkspaceView {
   readonly id: string;
   readonly title: string;
   private events: readonly TurnEvent[];
-  private readonly filter: TurnFilter;
   private readonly theme: Theme;
   private cwd?: string;
   private home?: string;
@@ -24,10 +17,9 @@ export class TurnLogView implements WorkspaceView {
   private cached?: { key: string; lines: string[] };
   private rows: Array<{ event?: TurnEvent; text: string }> = [];
 
-  constructor(filter: TurnFilter, events: readonly TurnEvent[], theme: Theme, onChange?: () => void, cwd?: string, home?: string) {
-    this.id = `turn:${filter}`;
-    this.title = filterLabel(filter);
-    this.filter = filter;
+  constructor(events: readonly TurnEvent[], theme: Theme, onChange?: () => void, cwd?: string, home?: string) {
+    this.id = "turn:activity";
+    this.title = "activity";
     this.events = events;
     this.theme = theme;
     this.onChange = onChange;
@@ -84,7 +76,7 @@ export class TurnLogView implements WorkspaceView {
   }
 
   private buildRows(width: number): Array<{ event?: TurnEvent; text: string }> {
-    const items = eventsForFilter(this.events, this.filter);
+    const items = this.events;
     const rows: Array<{ event?: TurnEvent; text: string }> = [];
     if (items.length === 0) {
       rows.push({ text: truncateToWidth(this.theme.fg("dim", "none"), width, "…") });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
+import { visibleWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { Sidebar } from "../extensions/pi-slate/sidebar.ts";
 import { DiffWorkspaceView, type WorkspaceView } from "../extensions/pi-slate/workspace.ts";
 import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
@@ -36,10 +36,10 @@ function mouse(partial: Partial<TuiMouseEvent> & Pick<TuiMouseEvent, "type" | "y
   };
 }
 
-function attachSidebar(): Sidebar {
+function attachSidebar(rows = 24): Sidebar {
   const sidebar = new Sidebar();
   const tui = {
-    terminal: { rows: 24, columns: 80 },
+    terminal: { rows, columns: 80 },
     requestRender() {},
     showOverlay() {
       return { hide() {} };
@@ -116,7 +116,7 @@ test("clicking a changed file selects it instead of copying its path", () => {
   assert.ok(labels.some((line) => line.includes("Preview · src/a.ts") && line.includes("[clear]")));
 });
 
-test("summary leaves blank lines between its sections", () => {
+test("summary leaves blank lines between its sections and shows a disjoint activity breakdown", () => {
   const sidebar = attachSidebar();
   sidebar.setFiles([
     { index: " ", worktree: "M", path: "src/a.ts" },
@@ -124,11 +124,11 @@ test("summary leaves blank lines between its sections", () => {
   ]);
   sidebar.setTurnImpact({
     revision: 1,
-    filesRead: 1,
     toolsCalled: 6,
-    shellCommands: 5,
-    subagentsSpawned: 0,
-    events: [],
+    events: [
+      { id: "read", toolName: "read", title: "read a.ts", detail: "", isError: false, pending: false },
+      ...Array.from({ length: 5 }, (_, index) => ({ id: `bash-${index}`, toolName: "bash", title: "bash test", detail: "", isError: false, pending: false })),
+    ],
   });
   const labels = sidebar.render(40).map(strip);
   const summary = labels.indexOf("Summary");
@@ -138,8 +138,46 @@ test("summary leaves blank lines between its sections", () => {
   assert.equal(labels[summary + 1], "");
   assert.ok(lastTurn > files);
   assert.equal(labels[lastTurn - 1], "");
-  assert.equal(labels[lastTurn + 1], "  6 tools called");
-  assert.equal(labels[lastTurn + 2], "  5 shell commands");
+  assert.equal(labels[lastTurn + 1], "  6 actions");
+  assert.equal(labels[lastTurn + 2], "  1 inspected · 5 ran");
+  assert.equal(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 2 })), undefined);
+  assert.equal(sidebar.currentViewId(), undefined);
+});
+
+test("empty activity is intentional, non-clickable, and narrow summaries stay within the sidebar", () => {
+  const sidebar = attachSidebar();
+  const empty = sidebar.render(40).map(strip);
+  const lastTurn = empty.indexOf("Last Turn");
+  assert.equal(empty[lastTurn + 1], "  No tool activity");
+  assert.equal(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 1 })), undefined);
+  assert.equal(sidebar.currentViewId(), undefined);
+
+  sidebar.setTurnImpact({
+    revision: 1, toolsCalled: 3,
+    events: [
+      { id: "read", toolName: "read", title: "read a.ts", detail: "", isError: false, pending: false },
+      { id: "bash", toolName: "bash", title: "bash test", detail: "", isError: false, pending: false },
+      { id: "powershell", toolName: "powershell", title: "powershell test", detail: "", isError: false, pending: false },
+    ],
+  });
+  assert.ok(sidebar.render(8).every((line) => visibleWidth(strip(line)) <= 8));
+});
+
+test("a short sidebar keeps the visible total clickable when its breakdown is clipped", () => {
+  const sidebar = attachSidebar(11);
+  sidebar.setTurnImpact({
+    revision: 1, toolsCalled: 2,
+    events: [
+      { id: "read", toolName: "read", title: "read a.ts", detail: "", isError: false, pending: false },
+      { id: "bash", toolName: "bash", title: "bash test", detail: "", isError: false, pending: false },
+    ],
+  });
+  const labels = sidebar.render(40).map(strip);
+  const total = labels.indexOf("  2 actions");
+  assert.ok(total >= 0);
+  assert.equal(labels.length, 11);
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: total })), { handled: true, render: true });
+  assert.equal(sidebar.currentViewId(), "turn:activity");
 });
 
 test("context dock keeps the heading, rule, and spend", () => {
@@ -160,10 +198,7 @@ test("clicking a last-turn fact opens that list in Preview", () => {
   const sidebar = attachSidebar();
   sidebar.setTurnImpact({
     revision: 1,
-    filesRead: 1,
     toolsCalled: 1,
-    shellCommands: 0,
-    subagentsSpawned: 0,
     events: [{ id: "r1", toolName: "read", title: "read a.ts", detail: "full read", isError: false, pending: false }],
   });
   const labels = sidebar.render(40).map(strip);
@@ -171,10 +206,10 @@ test("clicking a last-turn fact opens that list in Preview", () => {
   assert.equal(sidebar.handleMouse(mouse({ type: "move", y: lastTurn + 1 })), undefined);
   assert.equal(sidebar.currentViewId(), undefined);
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 1 })), { handled: true, render: true });
-  assert.equal(sidebar.currentViewId(), "turn:tool");
+  assert.equal(sidebar.currentViewId(), "turn:activity");
   const preview = sidebar.render(40).map(strip);
-  assert.ok(preview.some((line) => line.includes("Preview · tools called") && line.includes("[clear]")));
-  assert.ok(preview.some((line) => line.includes("> 1 tool called")));
+  assert.ok(preview.some((line) => line.includes("Preview · activity") && line.includes("[clear]")));
+  assert.ok(preview.some((line) => line.includes("> 1 action")));
   assert.ok(preview.some((line) => /▸ read a.ts/.test(line)));
   const heading = preview.findIndex((line) => line.includes("[clear]"));
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: heading, x: 38 })), { handled: true, render: true });

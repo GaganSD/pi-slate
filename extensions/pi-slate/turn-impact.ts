@@ -1,5 +1,3 @@
-export type TurnFilter = "tool" | "shell";
-
 export type TurnEvent = {
   id: string;
   toolName: string;
@@ -11,10 +9,7 @@ export type TurnEvent = {
 
 export type TurnImpactSnapshot = {
   revision: number;
-  filesRead: number;
   toolsCalled: number;
-  shellCommands: number;
-  subagentsSpawned: number;
   events: TurnEvent[];
 };
 
@@ -23,25 +18,17 @@ type PendingCall = {
   input?: Record<string, unknown>;
 };
 
-export const TURN_FILTERS: TurnFilter[] = ["tool", "shell"];
-
 /** Transient, UI-local facts observed during the current user prompt. */
 export class TurnImpactTracker {
   private events: TurnEvent[] = [];
   private pending = new Map<string, PendingCall>();
-  private reads = new Set<string>();
   private toolsCalled = 0;
-  private shellCommands = 0;
-  private subagentsSpawned = 0;
   private revision = 0;
 
   reset(): TurnImpactSnapshot {
     this.events = [];
     this.pending.clear();
-    this.reads.clear();
     this.toolsCalled = 0;
-    this.shellCommands = 0;
-    this.subagentsSpawned = 0;
     this.revision += 1;
     return this.snapshot();
   }
@@ -49,8 +36,6 @@ export class TurnImpactTracker {
   toolCall(call: { toolCallId: string; toolName: string; input?: Record<string, unknown> }): TurnImpactSnapshot {
     const input = call.input && typeof call.input === "object" ? call.input : undefined;
     this.toolsCalled += 1;
-    if (isShellTool(call.toolName)) this.shellCommands += 1;
-    if (call.toolName === "subagent") this.subagentsSpawned += 1;
     const event: TurnEvent = {
       id: call.toolCallId,
       toolName: call.toolName,
@@ -70,8 +55,6 @@ export class TurnImpactTracker {
     if (!pending) {
       const toolName = end.toolName || "tool";
       this.toolsCalled += 1;
-      if (isShellTool(toolName)) this.shellCommands += 1;
-      if (toolName === "subagent") this.subagentsSpawned += 1;
       const event: TurnEvent = {
         id: end.toolCallId,
         toolName,
@@ -87,8 +70,6 @@ export class TurnImpactTracker {
     pending.event.pending = false;
     pending.event.isError = end.isError;
     pending.event.detail = formatDetail(pending.event.toolName, pending.input, end.result, end.isError, false);
-    const path = typeof pending.input?.path === "string" ? pending.input.path : undefined;
-    if (!end.isError && pending.event.toolName === "read" && path) this.reads.add(path);
     this.revision += 1;
     return this.snapshot();
   }
@@ -96,10 +77,7 @@ export class TurnImpactTracker {
   snapshot(): TurnImpactSnapshot {
     return {
       revision: this.revision,
-      filesRead: this.reads.size,
       toolsCalled: this.toolsCalled,
-      shellCommands: this.shellCommands,
-      subagentsSpawned: this.subagentsSpawned,
       events: this.events,
     };
   }
@@ -107,11 +85,6 @@ export class TurnImpactTracker {
 
 export function isShellTool(toolName: string): boolean {
   return toolName === "bash" || toolName === "powershell";
-}
-
-export function eventsForFilter(events: readonly TurnEvent[], filter: TurnFilter): TurnEvent[] {
-  if (filter === "shell") return events.filter((event) => isShellTool(event.toolName));
-  return [...events];
 }
 
 export function eventTitle(toolName: string, input: Record<string, unknown> | undefined): string {
@@ -186,17 +159,34 @@ function prettyInput(input: Record<string, unknown> | undefined): string[] {
   return json === "{}" ? [] : [json];
 }
 
-export function filterLabel(filter: TurnFilter): string {
-  return filter === "shell" ? "shell commands" : "tools called";
-}
+type ActivityCategory = "inspected" | "edited" | "ran" | "delegated";
+
+const INSPECTION_TOOLS = new Set(["read", "grep", "find", "ls"]);
+const ACTIVITY_CATEGORIES: ActivityCategory[] = ["inspected", "edited", "ran", "delegated"];
 
 function plural(count: number, singular: string, many = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : many}`;
 }
 
+function activityCategory(toolName: string): ActivityCategory | undefined {
+  if (INSPECTION_TOOLS.has(toolName)) return "inspected";
+  if (toolName === "edit" || toolName === "write") return "edited";
+  if (isShellTool(toolName)) return "ran";
+  if (toolName === "subagent") return "delegated";
+  return undefined;
+}
+
+/** Compact, disjoint activity facts for the latest user prompt. */
 export function formatTurnImpact(snapshot: TurnImpactSnapshot): string[] {
-  return [
-    plural(snapshot.toolsCalled, "tool") + " called",
-    plural(snapshot.shellCommands, "shell command"),
-  ];
+  if (snapshot.toolsCalled === 0) return ["No tool activity"];
+  const counts = new Map<ActivityCategory, number>();
+  for (const event of snapshot.events) {
+    const category = activityCategory(event.toolName);
+    if (category) counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+  const breakdown = ACTIVITY_CATEGORIES.flatMap((category) => {
+    const count = counts.get(category) ?? 0;
+    return count > 0 ? [`${count} ${category}`] : [];
+  });
+  return [plural(snapshot.toolsCalled, "action"), ...(breakdown.length > 0 ? [breakdown.join(" · ")] : [])];
 }

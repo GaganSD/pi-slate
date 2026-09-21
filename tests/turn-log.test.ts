@@ -32,7 +32,6 @@ test("wrapLines splits on width and keeps blank lines", () => {
 
 test("turn log compacts home and workspace paths", () => {
   const view = new TurnLogView(
-    "tool",
     [event("1", "read", "read /Users/gagan/proj/src/a.ts")],
     theme(),
     undefined,
@@ -42,9 +41,9 @@ test("turn log compacts home and workspace paths", () => {
   assert.match(view.render(40, 1)[0] ?? "", /▸ read src\/a\.ts/);
 });
 
-test("turn log lists a filter and expands the full message on click", () => {
-  const view = new TurnLogView("tool", [event("1", "read", "read a.ts"), event("2", "bash", "bash ls")], theme());
-  assert.equal(view.title, "tools called");
+test("turn log lists unified activity and expands the full message on click", () => {
+  const view = new TurnLogView([event("1", "read", "read a.ts"), event("2", "bash", "bash ls")], theme());
+  assert.equal(view.title, "activity");
   const collapsed = view.render(40, 4);
   assert.match(collapsed[0] ?? "", /▸ read a.ts/);
   assert.equal(view.handleClick(0, 0), true);
@@ -54,9 +53,21 @@ test("turn log lists a filter and expands the full message on click", () => {
   assert.match(expanded[2] ?? "", /more/);
 });
 
+test("unified activity log keeps pending and failed calls auditable", () => {
+  const view = new TurnLogView([
+    { id: "pending", toolName: "bash", title: "bash npm test", detail: "pending\nnpm test", isError: false, pending: true },
+    { id: "failed", toolName: "deploy", title: "deploy", detail: "error\nfailed", isError: true, pending: false },
+  ], theme());
+  assert.match(view.render(40, 2)[0] ?? "", /▸ bash npm test/);
+  assert.equal(view.handleClick(0, 0), true);
+  assert.match(view.render(40, 4)[1] ?? "", /pending/);
+  assert.match(view.render(40, 4)[2] ?? "", /npm test/);
+  assert.match(view.render(40, 4)[3] ?? "", /▸ deploy/);
+});
+
 test("turn log wheel scrolls the flattened list", () => {
   const events = ["a", "b", "c", "d"].map((id) => event(id, "bash", `bash ${id}`));
-  const view = new TurnLogView("shell", events, theme());
+  const view = new TurnLogView(events, theme());
   view.render(20, 2);
   assert.equal(view.handleWheel(1), true);
   const lines = view.render(20, 2);
