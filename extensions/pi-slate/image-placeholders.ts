@@ -3,9 +3,9 @@ import type { CustomEditor, ExtensionAPI } from "@earendil-works/pi-coding-agent
 import { Editor } from "@earendil-works/pi-tui";
 import { ImagePeek } from "./image-peek.ts";
 import {
-  displayImagePlaceholders,
   mimeTypeForImagePath,
-  rewriteInsertedText,
+  nextImageNumber,
+  rewriteClipboardPaths,
   transformSubmittedText,
   type ImageAttachment,
   type ImagePathStore,
@@ -43,12 +43,12 @@ function installEditorPatch(store: ImagePathStore, onInserted: () => void): () =
   const originalInsert = proto[ORIGINAL_INSERT];
   const originalPaste = proto[ORIGINAL_PASTE];
   function insertPatch(this: Editor, text: string) {
-    const result = originalInsert.call(this, rewriteInsertedText(text, this.getText(), store));
+    const result = originalInsert.call(this, rewriteClipboardPaths(text, nextImageNumber(this.getText()), store));
     onInserted();
     return result;
   }
   function pastePatch(this: Editor, text: string) {
-    originalPaste.call(this, rewriteInsertedText(text, this.getText(), store));
+    originalPaste.call(this, rewriteClipboardPaths(text, nextImageNumber(this.getText()), store));
     onInserted();
   }
   proto.insertTextAtCursor = insertPatch;
@@ -72,7 +72,7 @@ export function installImagePlaceholders(pi: ExtensionAPI, workspace: Sidebar): 
 
   pi.registerMarkdownTransformer((markdown, { messageType }) => {
     if (messageType !== "user") return markdown;
-    return displayImagePlaceholders(markdown);
+    return rewriteClipboardPaths(markdown, nextImageNumber(markdown), new Map());
   });
 
   pi.on("input", async (event) => {

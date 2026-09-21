@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  displayImagePlaceholders,
   formatImageLocation,
   imageTokenAtCursor,
   mimeTypeForImagePath,
   nextImageNumber,
-  rewriteInsertedText,
+  rewriteClipboardPaths,
   transformSubmittedText,
   type ImageAttachment,
 } from "../extensions/pi-slate/placeholders.ts";
@@ -27,21 +26,21 @@ test("numbers placeholders from existing editor text", () => {
 
 test("rewrites a pasted clipboard path to the next placeholder", () => {
   const store = new Map<string, string>();
-  assert.equal(rewriteInsertedText(PATH, "", store), "[image-1]");
+  assert.equal(rewriteClipboardPaths(PATH, nextImageNumber(""), store), "[image-1]");
   assert.equal(store.get("1"), PATH);
-  assert.equal(rewriteInsertedText(PATH_2, "look at [image-1]\n", store), "[image-2]");
+  assert.equal(rewriteClipboardPaths(PATH_2, nextImageNumber("look at [image-1]\n"), store), "[image-2]");
   assert.equal(store.get("2"), PATH_2);
 });
 
 test("leaves ordinary pasted text alone", () => {
   const store = new Map<string, string>();
-  assert.equal(rewriteInsertedText("hello", "", store), "hello");
+  assert.equal(rewriteClipboardPaths("hello", nextImageNumber(""), store), "hello");
   assert.equal(store.size, 0);
 });
 
 test("displays leftover clipboard paths as placeholders", () => {
-  assert.equal(displayImagePlaceholders(`look\n"${PATH}"`), "look\n[image-1]");
-  assert.equal(displayImagePlaceholders("already [image-1]"), "already [image-1]");
+  assert.equal(rewriteClipboardPaths(`look\n"${PATH}"`, 1, new Map()), "look\n[image-1]");
+  assert.equal(rewriteClipboardPaths("already [image-1]", 2, new Map()), "already [image-1]");
 });
 
 test("attaches mapped images and rewrites leftover paths on submit", () => {
