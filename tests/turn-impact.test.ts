@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
   eventTitle,
   formatDetail,
@@ -40,6 +41,27 @@ test("reset clears the current turn and keeps moving the revision", () => {
   assert.equal(afterReset.toolsCalled, 0);
   assert.equal(afterReset.events.length, 0);
   assert.ok(afterReset.revision > 0);
+});
+
+test("restore rebuilds the latest user turn from session history", () => {
+  const message = (value: object) => ({ type: "message", message: value });
+  const entries = [
+    message({ role: "user", content: "old" }),
+    message({ role: "assistant", content: [{ type: "toolCall", id: "old", name: "write", arguments: { path: "old.ts" } }] }),
+    message({ role: "toolResult", toolCallId: "old", toolName: "write", content: [{ type: "text", text: "done" }], isError: false }),
+    message({ role: "user", content: "latest" }),
+    message({ role: "assistant", content: [{ type: "toolCall", id: "read", name: "read", arguments: { path: "a.ts" } }] }),
+    message({ role: "toolResult", toolCallId: "read", toolName: "read", content: [{ type: "text", text: "source" }], isError: true }),
+    message({ role: "assistant", content: [{ type: "toolCall", id: "shell", name: "bash", arguments: { command: "npm test" } }] }),
+  ] as unknown as SessionEntry[];
+
+  const restored = new TurnImpactTracker().restore(entries);
+  assert.equal(restored.toolsCalled, 2);
+  assert.deepEqual(restored.events.map(({ id, pending, isError }) => ({ id, pending, isError })), [
+    { id: "read", pending: false, isError: true },
+    { id: "shell", pending: true, isError: false },
+  ]);
+  assert.match(restored.events[0]?.detail ?? "", /^error\na\.ts\nsource$/);
 });
 
 test("formatTurnImpact uses a total and disjoint activity categories", () => {

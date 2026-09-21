@@ -251,7 +251,7 @@ export default function piSlate(pi: ExtensionAPI): void {
     diffs.clear();
     sidebar.setCwd(ctx.cwd);
     sidebar.setSelectedPreview(undefined);
-    sidebar.setTurnImpact(turnImpact.reset());
+    sidebar.setTurnImpact(turnImpact.restore(ctx.sessionManager.getBranch()));
     sidebar.setPreferredWidth(config.sidebarPercent);
     sidebar.setActions({
       persistWidth: (percent) => {
@@ -382,9 +382,12 @@ export default function piSlate(pi: ExtensionAPI): void {
     syncSidebar(ctx);
     void files.refresh();
   });
-  pi.on("session_compact", (event, ctx) => {
+  pi.on("session_compact", (_event, ctx) => {
     currentContext = ctx;
     syncSidebar(ctx);
+  });
+  pi.on("session_tree", (_event, ctx) => {
+    sidebar.setTurnImpact(turnImpact.restore(ctx.sessionManager.getBranch()));
   });
   pi.on("session_shutdown", (_event, ctx) => {
     tokenRate.dispose();

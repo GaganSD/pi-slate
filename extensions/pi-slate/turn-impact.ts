@@ -1,3 +1,5 @@
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+
 export type TurnEvent = {
   id: string;
   toolName: string;
@@ -30,6 +32,30 @@ export class TurnImpactTracker {
     this.pending.clear();
     this.toolsCalled = 0;
     this.revision += 1;
+    return this.snapshot();
+  }
+
+  restore(entries: readonly SessionEntry[]): TurnImpactSnapshot {
+    this.reset();
+    for (const entry of entries) {
+      if (entry.type !== "message") continue;
+      const message = entry.message;
+      if (message.role === "user") {
+        this.reset();
+      } else if (message.role === "assistant") {
+        for (const part of message.content) {
+          if (part.type !== "toolCall") continue;
+          this.toolCall({ toolCallId: part.id, toolName: part.name, input: part.arguments });
+        }
+      } else if (message.role === "toolResult") {
+        this.toolEnd({
+          toolCallId: message.toolCallId,
+          toolName: message.toolName,
+          result: message.content,
+          isError: message.isError,
+        });
+      }
+    }
     return this.snapshot();
   }
 
