@@ -1,6 +1,8 @@
+import { homedir } from "node:os";
 import { type Theme } from "@earendil-works/pi-coding-agent";
 import {
   truncateToWidth,
+  visibleWidth,
   type Component,
   type OverlayHandle,
   type TUI,
@@ -37,6 +39,7 @@ import {
 } from "./workspace-layout.ts";
 
 const KITTY_PREFIX = "\x1b_G";
+const CLEAR = "[clear]";
 
 export type SidebarContextData = {
   tokens: number | null;
@@ -68,7 +71,9 @@ export class Sidebar implements Component {
   private filesOffset = 0;
   private selectedFileKey?: string;
   private selectedTurn?: TurnFilter;
+  private lastClear?: { y: number; x0: number; x1: number };
   private cwd = "";
+  private home = homedir();
   private contentCached?: { key: string; lines: string[] };
   private dockCached?: { key: string; lines: string[] };
   private actions?: SidebarActions;
@@ -153,6 +158,8 @@ export class Sidebar implements Component {
   setCwd(cwd: string): void {
     if (this.cwd === cwd) return;
     this.cwd = cwd;
+    for (const view of this.turnViews.values()) view.setPlace(cwd, this.home);
+    this.contentCached = undefined;
   }
 
   setFiles(files: FileChange[]): void {
@@ -213,6 +220,15 @@ export class Sidebar implements Component {
       this.actions?.selectFile(file);
       return { handled: true };
     }
+    if (
+      event.type === "click" && event.button === "left" && this.lastClear
+      && event.y === this.lastClear.y
+      && event.x >= this.lastClear.x0 && event.x < this.lastClear.x1
+    ) {
+      this.setView(undefined);
+      this.setSelectedPreview(undefined);
+      return { handled: true, render: true };
+    }
     const view = this.effectiveView();
     const titleOffset = peekHeight > 1 ? 1 : 0;
     const peekBodyStart = peekStart + titleOffset;
@@ -268,6 +284,7 @@ export class Sidebar implements Component {
     this.filesOffset = 0;
     this.selectedFileKey = undefined;
     this.selectedTurn = undefined;
+    this.lastClear = undefined;
     this.cwd = "";
     this.contentCached = undefined;
     this.dockCached = undefined;
@@ -318,8 +335,9 @@ export class Sidebar implements Component {
     const filters = turnFilters();
     const impact = formatTurnImpact(this.turnImpact).map((line, index) => {
       const selected = filters[index] === this.selectedTurn;
-      if (selected) return this.decorateLine(theme ? theme.bold(theme.fg("muted", `> ${line}`)) : `> ${line}`, width, theme);
-      return this.body(line, width, theme, "muted");
+      const text = `${selected ? "> " : "  "}${line}`;
+      if (selected) return this.decorateLine(theme ? theme.bold(theme.fg("muted", text)) : text, width, theme);
+      return this.body(text, width, theme, "muted");
     });
     const extra = Math.max(0, height - (1 + files.length + 1 + impact.length));
     const lines = [this.heading("Summary", width, theme)];
@@ -339,8 +357,7 @@ export class Sidebar implements Component {
   private peekLines(width: number, maxHeight: number, theme: Theme | undefined): string[] {
     if (maxHeight < 1) return [];
     const view = this.effectiveView();
-    const heading = view?.title ? `Preview · ${view.title}` : "Preview";
-    const lines = [this.heading(heading, width, theme)];
+    const lines = [this.peekHeading(width, theme, view)];
     const bodyHeight = maxHeight - 1;
     if (bodyHeight < 1) return lines;
     if (!view) {
@@ -367,10 +384,11 @@ export class Sidebar implements Component {
       const mark = fileMark(line.item);
       const label = formatFileLabel(line.item);
       const selected = fileKey(line.item) === this.selectedFileKey;
-      const text = selected ? `> ${mark.mark} ${label}` : `${mark.mark} ${label}`;
+      const prefix = selected ? "> " : "  ";
+      const text = `${prefix}${mark.mark} ${label}`;
       if (!theme) return this.decorateLine(text, width, theme);
-      const colored = `${theme.fg(mark.tone, mark.mark)} ${theme.fg("muted", label)}`;
-      return this.decorateLine(selected ? theme.bold(`> ${colored}`) : colored, width, theme);
+      const colored = `${prefix}${theme.fg(mark.tone, mark.mark)} ${theme.fg("muted", label)}`;
+      return this.decorateLine(selected ? theme.bold(colored) : colored, width, theme);
     });
   }
 
@@ -380,7 +398,7 @@ export class Sidebar implements Component {
       view = new TurnLogView(filter, this.turnImpact.events, this.requireTheme(), () => {
         this.contentCached = undefined;
         this.tui?.requestRender();
-      });
+      }, this.cwd, this.home);
       this.turnViews.set(filter, view);
     }
     return view;
@@ -406,6 +424,27 @@ export class Sidebar implements Component {
     const lines = block.slice(0, height);
     while (lines.length < height) lines.push(this.decorateLine("", width, theme));
     return lines;
+  }
+
+  private peekHeading(width: number, theme: Theme | undefined, view: WorkspaceView | undefined): string {
+    const title = view?.title ? `Preview · ${view.title}` : "Preview";
+    if (!view) {
+      this.lastClear = undefined;
+      return this.heading(title, width, theme);
+    }
+    const inner = Math.max(0, width - 2);
+    const leftMax = Math.max(0, inner - CLEAR.length - 1);
+    const left = truncateToWidth(title, leftMax, "…");
+    const pad = Math.max(1, inner - visibleWidth(left) - CLEAR.length);
+    this.lastClear = {
+      y: this.lastSlots.summaryHeight + this.lastSlots.dividerHeight,
+      x0: 2 + inner - CLEAR.length,
+      x1: 2 + inner,
+    };
+    const border = theme ? theme.fg("borderMuted", "│") : "│";
+    const action = theme ? theme.fg("dim", CLEAR) : CLEAR;
+    const label = theme ? theme.bold(theme.fg("text", left)) : left;
+    return `${border} ${label}${" ".repeat(pad)}${action}`;
   }
 
   private heading(label: string, width: number, theme: Theme | undefined): string {

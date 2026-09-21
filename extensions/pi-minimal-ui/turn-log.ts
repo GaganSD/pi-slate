@@ -1,5 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { compactDisplayText } from "./layout.ts";
 import {
   eventsForFilter,
   filterLabel,
@@ -15,23 +16,34 @@ export class TurnLogView implements WorkspaceView {
   private events: readonly TurnEvent[];
   private readonly filter: TurnFilter;
   private readonly theme: Theme;
+  private cwd?: string;
+  private home?: string;
   private readonly onChange?: () => void;
   private expanded = new Set<string>();
   private offset = 0;
   private cached?: { key: string; lines: string[] };
   private rows: Array<{ event?: TurnEvent; text: string }> = [];
 
-  constructor(filter: TurnFilter, events: readonly TurnEvent[], theme: Theme, onChange?: () => void) {
+  constructor(filter: TurnFilter, events: readonly TurnEvent[], theme: Theme, onChange?: () => void, cwd?: string, home?: string) {
     this.id = `turn:${filter}`;
     this.title = filterLabel(filter);
     this.filter = filter;
     this.events = events;
     this.theme = theme;
     this.onChange = onChange;
+    this.cwd = cwd;
+    this.home = home;
   }
 
   setEvents(events: readonly TurnEvent[]): void {
     this.events = events;
+    this.cached = undefined;
+  }
+
+  setPlace(cwd?: string, home?: string): void {
+    if (this.cwd === cwd && this.home === home) return;
+    this.cwd = cwd;
+    this.home = home;
     this.cached = undefined;
   }
 
@@ -81,12 +93,13 @@ export class TurnLogView implements WorkspaceView {
     for (const event of items) {
       const mark = this.expanded.has(event.id) ? "▾" : "▸";
       const tone = eventTone(event);
+      const title = compactDisplayText(event.title, this.cwd, this.home);
       rows.push({
         event,
-        text: truncateToWidth(this.theme.fg(tone, `${mark} ${event.title}`), width, "…"),
+        text: truncateToWidth(this.theme.fg(tone, `${mark} ${title}`), width, "…"),
       });
       if (!this.expanded.has(event.id)) continue;
-      for (const line of wrapLines(event.detail, width)) {
+      for (const line of wrapLines(compactDisplayText(event.detail, this.cwd, this.home), width)) {
         rows.push({ text: truncateToWidth(this.theme.fg("dim", line || " "), width, "…") });
       }
     }

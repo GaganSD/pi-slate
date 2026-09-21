@@ -17,6 +17,10 @@ function view(id: string): WorkspaceView {
   return { id, render: () => [id], invalidate() {} };
 }
 
+function strip(line: string): string {
+  return line.replace(/\[(?!clear\])\w+\]/g, "").replace(/^│\s?/, "");
+}
+
 function mouse(partial: Partial<TuiMouseEvent> & Pick<TuiMouseEvent, "type" | "y">): TuiMouseEvent {
   return {
     button: "left",
@@ -107,9 +111,9 @@ test("clicking a changed file selects it instead of copying its path", () => {
   assert.deepEqual(first, { handled: true });
   assert.equal(selected[0]?.path, "src/a.ts");
   assert.deepEqual(copied, []);
-  const labels = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
-  assert.ok(labels.some((line) => line.startsWith("> M src/a.ts")));
-  assert.ok(labels.includes("Preview · src/a.ts"));
+  const labels = sidebar.render(40).map(strip);
+  assert.ok(labels.some((line) => line.includes("> M src/a.ts")));
+  assert.ok(labels.some((line) => line.includes("Preview · src/a.ts") && line.includes("[clear]")));
 });
 
 test("summary leaves blank lines between its sections", () => {
@@ -126,7 +130,7 @@ test("summary leaves blank lines between its sections", () => {
     subagentsSpawned: 0,
     events: [],
   });
-  const labels = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
+  const labels = sidebar.render(40).map(strip);
   const summary = labels.indexOf("Summary");
   const files = labels.indexOf("Files Changed · 2");
   const lastTurn = labels.indexOf("Last Turn");
@@ -134,9 +138,8 @@ test("summary leaves blank lines between its sections", () => {
   assert.equal(labels[summary + 1], "");
   assert.ok(lastTurn > files);
   assert.equal(labels[lastTurn - 1], "");
-  assert.equal(labels[lastTurn + 1], "6 tools called");
-  assert.equal(labels[lastTurn + 2], "5 shell commands");
-  assert.equal(labels[lastTurn + 3], "0 subagents spawned");
+  assert.equal(labels[lastTurn + 1], "  6 tools called");
+  assert.equal(labels[lastTurn + 2], "  5 shell commands");
 });
 
 test("context dock keeps the heading, rule, and spend", () => {
@@ -163,14 +166,17 @@ test("clicking a last-turn fact opens that list in Preview", () => {
     subagentsSpawned: 0,
     events: [{ id: "r1", toolName: "read", title: "read a.ts", detail: "full read", isError: false, pending: false }],
   });
-  const labels = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
+  const labels = sidebar.render(40).map(strip);
   const lastTurn = labels.indexOf("Last Turn");
   assert.equal(sidebar.handleMouse(mouse({ type: "move", y: lastTurn + 1 })), undefined);
   assert.equal(sidebar.currentViewId(), undefined);
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 1 })), { handled: true, render: true });
   assert.equal(sidebar.currentViewId(), "turn:tool");
-  const preview = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
-  assert.ok(preview.includes("Preview · tools called"));
-  assert.ok(preview.includes("> 1 tool called"));
+  const preview = sidebar.render(40).map(strip);
+  assert.ok(preview.some((line) => line.includes("Preview · tools called") && line.includes("[clear]")));
+  assert.ok(preview.some((line) => line.includes("> 1 tool called")));
   assert.ok(preview.some((line) => /▸ read a.ts/.test(line)));
+  const heading = preview.findIndex((line) => line.includes("[clear]"));
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: heading, x: 38 })), { handled: true, render: true });
+  assert.equal(sidebar.currentViewId(), undefined);
 });

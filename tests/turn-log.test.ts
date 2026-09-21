@@ -30,6 +30,18 @@ test("wrapLines splits on width and keeps blank lines", () => {
   assert.deepEqual(wrapLines("a\n\nb", 8), ["a", "", "b"]);
 });
 
+test("turn log compacts home and workspace paths", () => {
+  const view = new TurnLogView(
+    "tool",
+    [event("1", "read", "read /Users/gagan/proj/src/a.ts")],
+    theme(),
+    undefined,
+    "/Users/gagan/proj",
+    "/Users/gagan",
+  );
+  assert.match(view.render(40, 1)[0] ?? "", /▸ read src\/a\.ts/);
+});
+
 test("turn log lists a filter and expands the full message on click", () => {
   const view = new TurnLogView("tool", [event("1", "read", "read a.ts"), event("2", "bash", "bash ls")], theme());
   assert.equal(view.title, "tools called");

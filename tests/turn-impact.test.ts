@@ -61,7 +61,6 @@ test("formatTurnImpact prints the last-turn facts", () => {
   }), [
     "0 tools called",
     "0 shell commands",
-    "0 subagents spawned",
   ]);
   assert.deepEqual(formatTurnImpact({
     revision: 2,
@@ -73,7 +72,6 @@ test("formatTurnImpact prints the last-turn facts", () => {
   }), [
     "6 tools called",
     "5 shell commands",
-    "2 subagents spawned",
   ]);
 });
 
@@ -85,12 +83,11 @@ test("eventsForFilter slices the unified log", () => {
   ];
   assert.equal(eventsForFilter(events, "tool").length, 3);
   assert.deepEqual(eventsForFilter(events, "shell").map((event) => event.id), ["2"]);
-  assert.deepEqual(eventsForFilter(events, "subagent").map((event) => event.id), ["3"]);
 });
 
 test("event titles and details stay auditable", () => {
   assert.equal(eventTitle("bash", { command: "ls -la" }), "bash ls -la");
   assert.equal(eventTitle("subagent", { agent: "reviewer", task: "check" }), "reviewer · check");
   assert.equal(formatResult([{ type: "text", text: "hello" }]), "hello");
-  assert.match(formatDetail("read", { path: "a.ts" }, "src", false, false), /read · ok/);
+  assert.match(formatDetail("read", { path: "a.ts" }, "src", false, false), /^ok\na\.ts\nsrc$/);
 });

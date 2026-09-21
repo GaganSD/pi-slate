@@ -38,7 +38,7 @@ export function splitSidebarContent(
   const filesWant = Math.max(0, Math.min(FILES_WIDGET_MAX_LINES, Math.floor(filesDesired)));
   // Keep Preview usable first; Summary expands only into the space it needs.
   if (slotHeight <= 2) return { summaryHeight: 0, filesHeight: 0, dividerHeight: 0, peekHeight: slotHeight };
-  const summaryWant = Math.min(13, 2 + filesWant + 3 + 2); // headings, files, three facts, two section gaps.
+  const summaryWant = Math.min(12, 2 + filesWant + 2 + 2); // headings, files, two facts, two section gaps.
   const summaryHeight = Math.min(summaryWant, slotHeight - 2);
   const dividerHeight = summaryHeight > 0 ? 1 : 0;
   const peekHeight = slotHeight - summaryHeight - dividerHeight;

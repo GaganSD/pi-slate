@@ -13,6 +13,15 @@ export function compactPath(cwd: string | undefined, home?: string): string {
   return cwd;
 }
 
+export function compactDisplayText(text: string, cwd?: string, home?: string): string {
+  let out = text;
+  if (cwd && cwd.length > 1) {
+    out = out.replaceAll(`${cwd}/`, "").replaceAll(cwd, compactPath(cwd, home));
+  }
+  if (home && home.length > 1) out = out.replaceAll(home, "~");
+  return out;
+}
+
 export function modelLabel(model: { id?: string; name?: string } | undefined): string {
   if (!model) return "no model";
   return model.id || model.name || "unknown model";

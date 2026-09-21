@@ -1,4 +1,4 @@
-export type TurnFilter = "tool" | "shell" | "subagent";
+export type TurnFilter = "tool" | "shell";
 
 export type TurnEvent = {
   id: string;
@@ -23,7 +23,7 @@ type PendingCall = {
   input?: Record<string, unknown>;
 };
 
-const FILTERS: TurnFilter[] = ["tool", "shell", "subagent"];
+const FILTERS: TurnFilter[] = ["tool", "shell"];
 
 /** Transient, UI-local facts observed during the current user prompt. */
 export class TurnImpactTracker {
@@ -114,9 +114,8 @@ export function isShellTool(toolName: string): boolean {
 }
 
 export function eventsForFilter(events: readonly TurnEvent[], filter: TurnFilter): TurnEvent[] {
-  if (filter === "tool") return [...events];
   if (filter === "shell") return events.filter((event) => isShellTool(event.toolName));
-  return events.filter((event) => event.toolName === "subagent");
+  return [...events];
 }
 
 export function eventTitle(toolName: string, input: Record<string, unknown> | undefined): string {
@@ -169,15 +168,30 @@ export function formatDetail(
   pending: boolean,
 ): string {
   const state = pending ? "pending" : isError ? "error" : "ok";
-  const args = input ? JSON.stringify(input, null, 2) : "{}";
   const body = formatResult(result);
-  return [`${toolName} · ${state}`, args, body].filter((part) => part.length > 0).join("\n");
+  return [state, ...prettyInput(input), body].filter((part) => part.length > 0).join("\n");
+}
+
+function prettyInput(input: Record<string, unknown> | undefined): string[] {
+  if (!input) return [];
+  const path = typeof input.path === "string" ? input.path : undefined;
+  const command = typeof input.command === "string" ? input.command : undefined;
+  const pattern = typeof input.pattern === "string" ? input.pattern : undefined;
+  const agent = typeof input.agent === "string" ? input.agent : undefined;
+  const task = typeof input.task === "string" ? input.task : undefined;
+  const lines = [
+    path,
+    command,
+    pattern,
+    [agent, task].filter(Boolean).join(" · ") || undefined,
+  ].filter((line): line is string => Boolean(line));
+  if (lines.length > 0) return lines;
+  const json = JSON.stringify(input, null, 2);
+  return json === "{}" ? [] : [json];
 }
 
 export function filterLabel(filter: TurnFilter): string {
-  if (filter === "tool") return "tools called";
-  if (filter === "shell") return "shell commands";
-  return "subagents spawned";
+  return filter === "shell" ? "shell commands" : "tools called";
 }
 
 function plural(count: number, singular: string, many = `${singular}s`): string {
@@ -188,6 +202,5 @@ export function formatTurnImpact(snapshot: TurnImpactSnapshot): string[] {
   return [
     plural(snapshot.toolsCalled, "tool") + " called",
     plural(snapshot.shellCommands, "shell command"),
-    plural(snapshot.subagentsSpawned, "subagent") + " spawned",
   ];
 }

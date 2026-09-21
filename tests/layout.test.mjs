@@ -4,6 +4,7 @@ import {
   PI_LOGO,
   PI_LOGO_ASCII,
   centerOffset,
+  compactDisplayText,
   compactPath,
   footerVisibility,
   countSkillCommands,
@@ -131,7 +132,7 @@ test("sidebar content uses a compact summary and retains Preview", () => {
     assert.ok(slots.peekHeight >= 1);
   }
   assert.deepEqual(splitSidebarContent(20, 5), {
-    summaryHeight: 12, filesHeight: 5, dividerHeight: 1, peekHeight: 7,
+    summaryHeight: 11, filesHeight: 5, dividerHeight: 1, peekHeight: 8,
   });
   assert.deepEqual(splitSidebarContent(6, 5), {
     summaryHeight: 4, filesHeight: 1, dividerHeight: 1, peekHeight: 1,
@@ -168,4 +169,12 @@ test("images sit at the top of the workspace pane", () => {
 test("home paths use a tilde without rewriting lookalikes", () => {
   assert.equal(compactPath("/Users/gagan/GitHub/pi", "/Users/gagan"), "~/GitHub/pi");
   assert.equal(compactPath("/Users/gagandev/pi", "/Users/gagan"), "/Users/gagandev/pi");
+  assert.equal(
+    compactDisplayText("read /Users/gagan/GitHub/pi/src/a.ts", "/Users/gagan/GitHub/pi", "/Users/gagan"),
+    "read src/a.ts",
+  );
+  assert.equal(
+    compactDisplayText("read /Users/gagan/.pi/agent/foo.ts", "/tmp/proj", "/Users/gagan"),
+    "read ~/.pi/agent/foo.ts",
+  );
 });
