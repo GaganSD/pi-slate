@@ -69,7 +69,7 @@ import {
   SLATE_NEW_ISSUE_URL,
 } from "./bug.ts";
 import { syncMessageWindow, type MessageWindow } from "./message-window.ts";
-import { applySlateTheme, shouldApplyInstallDefault } from "./install-defaults.ts";
+import { applySlateTheme, persistFullscreen, shouldApplyInstallDefault } from "./install-defaults.ts";
 
 type SlateConfig = {
   density: "comfortable" | "compact";
@@ -77,6 +77,7 @@ type SlateConfig = {
   sidebarPercent?: number;
   messageLength?: number | "all";
   themeApplied?: boolean;
+  fullscreenApplied?: boolean;
 };
 
 const CONFIG_PATH = join(getAgentDir(), "pi-slate.json");
@@ -101,6 +102,7 @@ function loadConfig(): SlateConfig {
       ...(sidebarPercent === undefined ? {} : { sidebarPercent }),
       ...(messageLength === undefined ? {} : { messageLength }),
       ...(value.themeApplied === true ? { themeApplied: true } : {}),
+      ...(value.fullscreenApplied === true ? { fullscreenApplied: true } : {}),
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -295,6 +297,15 @@ export default function piSlate(pi: ExtensionAPI): void {
     if (ctx.mode !== "tui") return;
     if (shouldApplyInstallDefault(config.themeApplied) && applySlateTheme(ctx)) {
       const next = { ...config, themeApplied: true };
+      try {
+        saveConfig(next);
+        config = next;
+      } catch {
+        // Retry on the next session if the marker cannot be saved.
+      }
+    }
+    if (shouldApplyInstallDefault(config.fullscreenApplied) && persistFullscreen(ctx.cwd)) {
+      const next = { ...config, fullscreenApplied: true };
       try {
         saveConfig(next);
         config = next;
