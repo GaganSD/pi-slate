@@ -24,6 +24,11 @@ import {
   parseSidebarPercent,
   parseSidebarWidthArg,
   parseSlateArgs,
+  parseMessageLength,
+  parseMessageLengthArg,
+  resolveMessageLength,
+  messageLengthMessage,
+  MESSAGE_LENGTH_DEFAULT,
   percentFromColumns,
   sidebarPercentFromColumns,
   slateArgumentCompletions,
@@ -136,6 +141,24 @@ test("a preferred sidebar width is clamped and hidden on narrow terminals", () =
   assert.deepEqual(parseSidebarWidthArg("nope"), { ok: false });
 });
 
+test("message-length parses counts and stays synced with the default", () => {
+  assert.equal(MESSAGE_LENGTH_DEFAULT, 100);
+  assert.equal(parseMessageLength(100), 100);
+  assert.equal(parseMessageLength(50.4), 50);
+  assert.equal(parseMessageLength(0), undefined);
+  assert.equal(parseMessageLength(2001), undefined);
+  assert.deepEqual(parseMessageLengthArg("default"), { ok: true });
+  assert.deepEqual(parseMessageLengthArg("all"), { ok: true, value: "all" });
+  assert.deepEqual(parseMessageLengthArg("unlimited"), { ok: true, value: "all" });
+  assert.deepEqual(parseMessageLengthArg("50"), { ok: true, value: 50 });
+  assert.deepEqual(parseMessageLengthArg("nope"), { ok: false });
+  assert.equal(resolveMessageLength(undefined), MESSAGE_LENGTH_DEFAULT);
+  assert.equal(resolveMessageLength("all"), Number.POSITIVE_INFINITY);
+  assert.equal(messageLengthMessage(undefined), "Message length reset to default");
+  assert.equal(messageLengthMessage("all"), "Message length set to all");
+  assert.equal(messageLengthMessage(50), "Message length set to 50");
+});
+
 test("/slate args route density, footer, and width", () => {
   assert.deepEqual(parseSlateArgs(""), { ok: true, kind: "menu" });
   assert.deepEqual(parseSlateArgs("density"), { ok: true, kind: "density" });
@@ -146,6 +169,14 @@ test("/slate args route density, footer, and width", () => {
   assert.deepEqual(parseSlateArgs("width 40"), { ok: true, kind: "width", width: 40 });
   assert.deepEqual(parseSlateArgs("width 30%"), { ok: true, kind: "width", width: 30 });
   assert.deepEqual(parseSlateArgs("width narrow"), { ok: true, kind: "width", width: 0 });
+  assert.deepEqual(parseSlateArgs("message-length"), { ok: true, kind: "message-length-menu" });
+  assert.deepEqual(parseSlateArgs("message-length default"), { ok: true, kind: "message-length" });
+  assert.deepEqual(parseSlateArgs("message-length 50"), { ok: true, kind: "message-length", value: 50 });
+  assert.deepEqual(parseSlateArgs("message-length all"), { ok: true, kind: "message-length", value: "all" });
+  assert.deepEqual(parseSlateArgs("bug"), { ok: true, kind: "bug-menu" });
+  assert.deepEqual(parseSlateArgs("bug file"), { ok: true, kind: "bug", action: "file" });
+  assert.deepEqual(parseSlateArgs("bug open"), { ok: true, kind: "bug", action: "open" });
+  assert.deepEqual(parseSlateArgs("bug nope"), { ok: false });
   assert.deepEqual(parseSlateArgs("width nope"), { ok: false });
   assert.deepEqual(parseSlateArgs("nope"), { ok: false });
   assert.deepEqual(parseSlateArgs("density compact extra"), { ok: false });
