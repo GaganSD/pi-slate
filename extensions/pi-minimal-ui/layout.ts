@@ -132,6 +132,21 @@ export function parseSidebarWidth(value: unknown): number | undefined {
   return columns >= 1 ? columns : undefined;
 }
 
+export const SIDEBAR_WIDTH_NARROW = SIDEBAR_MIN_WIDTH;
+export const SIDEBAR_WIDTH_MEDIUM = 40;
+export const SIDEBAR_WIDTH_WIDE = 56;
+
+export function parseSidebarWidthArg(raw: string): { ok: true; width?: number } | { ok: false } {
+  const value = raw.trim().toLowerCase();
+  if (value === "default") return { ok: true };
+  if (value === "narrow") return { ok: true, width: SIDEBAR_WIDTH_NARROW };
+  if (value === "medium") return { ok: true, width: SIDEBAR_WIDTH_MEDIUM };
+  if (value === "wide") return { ok: true, width: SIDEBAR_WIDTH_WIDE };
+  const columns = parseSidebarWidth(Number(value));
+  if (columns === undefined) return { ok: false };
+  return { ok: true, width: columns };
+}
+
 export function workspaceColumnWidth(totalWidth: number, preferred?: number): number {
   if (totalWidth < WORKSPACE_MIN_TERMINAL_WIDTH) return 0;
   const fallback = Math.max(SIDEBAR_MIN_WIDTH, Math.floor(totalWidth * SIDEBAR_DEFAULT_RATIO));

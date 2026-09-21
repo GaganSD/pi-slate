@@ -71,7 +71,9 @@ test("dragging the gutter moves a ghost guide and only commits width on release"
   sidebar.setActions({
     copyPath() {},
     selectFile() {},
-    persistWidth: (columns) => persisted.push(columns),
+    persistWidth: (columns) => {
+      if (columns !== undefined) persisted.push(columns);
+    },
   });
   sidebar.render(28);
   assert.equal(overlays[0]?.width, 28);
@@ -110,7 +112,9 @@ test("releasing the gutter on the current width does not persist", () => {
   sidebar.setActions({
     copyPath() {},
     selectFile() {},
-    persistWidth: (columns) => persisted.push(columns),
+    persistWidth: (columns) => {
+      if (columns !== undefined) persisted.push(columns);
+    },
   });
   sidebar.handleMouse(mouse({ type: "press", screenX: 112 }));
   sidebar.handleMouse(mouse({ type: "release", screenX: 112 }));
@@ -125,7 +129,9 @@ test("a stationary press on the inner handle column does not persist", () => {
   sidebar.setActions({
     copyPath() {},
     selectFile() {},
-    persistWidth: (columns) => persisted.push(columns),
+    persistWidth: (columns) => {
+      if (columns !== undefined) persisted.push(columns);
+    },
   });
   sidebar.render(40);
   assert.equal(overlays[0]?.width, 40);
@@ -187,7 +193,9 @@ test("fullscreen mouse drag from the chat side of the divider commits once", (t)
   sidebar.setActions({
     copyPath() {},
     selectFile() {},
-    persistWidth: (columns) => persisted.push(columns),
+    persistWidth: (columns) => {
+      if (columns !== undefined) persisted.push(columns);
+    },
   });
   t.after(() => {
     tui.stop({ preserveScreen: true });

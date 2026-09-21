@@ -40,6 +40,10 @@ import {
   modelLabel,
   parseMcpConnectedCount,
   parseSidebarWidth,
+  parseSidebarWidthArg,
+  SIDEBAR_WIDTH_MEDIUM,
+  SIDEBAR_WIDTH_NARROW,
+  SIDEBAR_WIDTH_WIDE,
 } from "./layout.ts";
 
 type MinimalUiConfig = {
@@ -72,6 +76,13 @@ function saveConfig(config: MinimalUiConfig): void {
   const temporaryPath = `${CONFIG_PATH}.${process.pid}.tmp`;
   writeFileSync(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   renameSync(temporaryPath, CONFIG_PATH);
+}
+
+function withSidebarWidth(current: MinimalUiConfig, columns: number | undefined): MinimalUiConfig {
+  const next = { ...current };
+  if (columns === undefined) delete next.sidebarWidth;
+  else next.sidebarWidth = columns;
+  return next;
 }
 
 function centeredLine(content: string, width: number): string {
@@ -232,8 +243,8 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     sidebar.setPreferredWidth(config.sidebarWidth);
     sidebar.setActions({
       persistWidth: (columns) => {
-        const next = { ...config, sidebarWidth: columns };
         try {
+          const next = withSidebarWidth(config, columns);
           saveConfig(next);
           config = next;
         } catch (error) {
@@ -378,6 +389,48 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     ctx.ui.setWorkingMessage();
     activeEditor = undefined;
     requestRender = () => {};
+  });
+
+  pi.registerCommand("sidebar-width", {
+    description: "Set the sidebar width, or reset to the default 20%",
+    handler: async (args, ctx) => {
+      let width: number | undefined;
+      if (args.trim()) {
+        const parsed = parseSidebarWidthArg(args);
+        if (!parsed.ok) {
+          ctx.ui.notify("Usage: /sidebar-width [default|narrow|medium|wide|<columns>]", "error");
+          return;
+        }
+        width = parsed.width;
+      } else {
+        const choice = await ctx.ui.select("Sidebar width", [
+          "Default (20%)",
+          `Narrow (${SIDEBAR_WIDTH_NARROW})`,
+          `Medium (${SIDEBAR_WIDTH_MEDIUM})`,
+          `Wide (${SIDEBAR_WIDTH_WIDE})`,
+        ]);
+        if (!choice) return;
+        if (choice.startsWith("Default")) width = undefined;
+        else if (choice.startsWith("Narrow")) width = SIDEBAR_WIDTH_NARROW;
+        else if (choice.startsWith("Medium")) width = SIDEBAR_WIDTH_MEDIUM;
+        else width = SIDEBAR_WIDTH_WIDE;
+      }
+
+      try {
+        const next = withSidebarWidth(config, width);
+        saveConfig(next);
+        config = next;
+        sidebar.setPreferredWidth(width);
+        requestRender();
+        ctx.ui.notify(
+          width === undefined ? "Sidebar width reset to default" : `Sidebar width set to ${width}`,
+          "info",
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`Could not save sidebar width: ${message}`, "error");
+      }
+    },
   });
 
   pi.registerCommand("minimal-ui", {

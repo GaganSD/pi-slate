@@ -56,7 +56,7 @@ export type SidebarContextData = {
 export type SidebarActions = {
   copyPath(filePath: string): void;
   selectFile(file: FileChange): void;
-  persistWidth?(columns: number): void;
+  persistWidth?(columns: number | undefined): void;
 };
 
 export class Sidebar implements Component {

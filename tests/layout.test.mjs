@@ -22,8 +22,12 @@ import {
   maxSidebarWidth,
   modelLabel,
   parseSidebarWidth,
+  parseSidebarWidthArg,
   sidebarHandleColumn,
   sidebarWidthFromScreenX,
+  SIDEBAR_WIDTH_MEDIUM,
+  SIDEBAR_WIDTH_NARROW,
+  SIDEBAR_WIDTH_WIDE,
   workspaceColumnWidth,
 } from "../extensions/pi-minimal-ui/layout.ts";
 import {
@@ -104,6 +108,12 @@ test("a preferred sidebar width is clamped and hidden on narrow terminals", () =
   assert.equal(parseSidebarWidth(36.4), 36);
   assert.equal(parseSidebarWidth(0), undefined);
   assert.equal(parseSidebarWidth("40"), undefined);
+  assert.deepEqual(parseSidebarWidthArg("default"), { ok: true });
+  assert.deepEqual(parseSidebarWidthArg(" narrow "), { ok: true, width: SIDEBAR_WIDTH_NARROW });
+  assert.deepEqual(parseSidebarWidthArg("medium"), { ok: true, width: SIDEBAR_WIDTH_MEDIUM });
+  assert.deepEqual(parseSidebarWidthArg("wide"), { ok: true, width: SIDEBAR_WIDTH_WIDE });
+  assert.deepEqual(parseSidebarWidthArg("48"), { ok: true, width: 48 });
+  assert.deepEqual(parseSidebarWidthArg("nope"), { ok: false });
 });
 
 test("sidebar rows pin the footer dock and give the rest to content", () => {

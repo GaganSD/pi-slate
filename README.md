@@ -24,7 +24,7 @@ For a project-local install, use `pi install -l git:github.com/GaganSD/pi-extens
 
 - Centered Pi header and compact footer.
 - A muted `pi-minimal` theme.
-- A right sidebar with a compact **Summary** (Files Changed and Last Turn counts for the last prompt), **Preview**, and **Context**. Drag the left `│` to resize it; the chat reflows when you release, and the width is saved in `~/.pi/agent/pi-minimal-ui.json`. Click a changed file or Last Turn count to open it in Preview; the heading shows what is selected, and a click on a Last Turn row expands the full tool message.
+- A right sidebar with a compact **Summary** (Files Changed and Last Turn counts for the last prompt), **Preview**, and **Context**. Drag the left `│` to resize it; the chat reflows when you release, and the width is saved in `~/.pi/agent/pi-minimal-ui.json`. `/sidebar-width` sets a size or resets to the default 20%. Click a changed file or Last Turn count to open it in Preview; the heading shows what is selected, and a click on a Last Turn row expands the full tool message.
 - Files Changed reads local `git status` at startup and after Pi work; it does not poll while Pi is idle. Click a changed file to lazily load its read-only Git diff preview.
 - Image peek: put the cursor on an `[image-N]` attachment token to preview it in the sidebar. Image-capable terminals render the image; other terminals get a text fallback, and leaving the token restores a selected file diff.
 - `/minimal-ui` toggles comfortable/compact editor density and the standard/minimal footer. Preferences are stored in `~/.pi/agent/pi-minimal-ui.json`.
