@@ -70,6 +70,7 @@ test("dragging the gutter moves a ghost guide and only commits width on release"
   const persisted: number[] = [];
   sidebar.setActions({
     copyPath() {},
+    openFile() {},
     selectFile() {},
     persistWidth: (columns) => {
       if (columns !== undefined) persisted.push(columns);
@@ -111,6 +112,7 @@ test("releasing the gutter on the current width does not persist", () => {
   const persisted: number[] = [];
   sidebar.setActions({
     copyPath() {},
+    openFile() {},
     selectFile() {},
     persistWidth: (columns) => {
       if (columns !== undefined) persisted.push(columns);
@@ -128,6 +130,7 @@ test("a stationary press on the inner handle column does not persist", () => {
   sidebar.setPreferredWidth(29);
   sidebar.setActions({
     copyPath() {},
+    openFile() {},
     selectFile() {},
     persistWidth: (columns) => {
       if (columns !== undefined) persisted.push(columns);
@@ -147,6 +150,7 @@ test("clicking the gutter does not select a changed file", () => {
   const selected: FileChange[] = [];
   sidebar.setActions({
     copyPath() {},
+    openFile() {},
     selectFile: (file) => selected.push(file),
   });
   sidebar.setFiles([{ index: " ", worktree: "M", path: "src/a.ts" }]);
@@ -192,6 +196,7 @@ test("fullscreen mouse drag from the chat side of the divider commits once", (t)
   sidebar.attach(tui, theme());
   sidebar.setActions({
     copyPath() {},
+    openFile() {},
     selectFile() {},
     persistWidth: (columns) => {
       if (columns !== undefined) persisted.push(columns);

@@ -1,6 +1,6 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import {
   copyToClipboard,
   CustomEditor,
@@ -63,7 +63,7 @@ import {
   ghCreateIssueArgs,
   issueTemplate,
   newIssueUrl,
-  openUrlArgs,
+  openExternalArgs,
   parseGhIssueUrl,
   SLATE_ISSUES_URL,
   SLATE_NEW_ISSUE_URL,
@@ -337,6 +337,16 @@ export default function piSlate(pi: ExtensionAPI): void {
           () => ctx.ui.notify("Could not copy file location", "error"),
         );
       },
+      openFile: (filePath) => {
+        const target = resolve(ctx.cwd, filePath);
+        const { command, args } = openExternalArgs(target);
+        void Promise.resolve(pi.exec(command, args, { timeout: 5000 })).then(
+          (result) => {
+            if (result.code !== 0) ctx.ui.notify("Could not open file", "error");
+          },
+          () => ctx.ui.notify("Could not open file", "error"),
+        );
+      },
       selectFile: (file) => {
         const selectionId = fileKey(file);
         const title = formatFileLabel(file);
@@ -347,9 +357,17 @@ export default function piSlate(pi: ExtensionAPI): void {
           cached?.text ?? "",
           ctx.ui.theme,
           title,
+          file.path,
         ));
         void diffs.select(ctx.cwd, file, fileSnapshot, (result) => {
-          sidebar.setSelectedPreview(new DiffWorkspaceView(selectionId, result.state, result.text, ctx.ui.theme, title));
+          sidebar.setSelectedPreview(new DiffWorkspaceView(
+            selectionId,
+            result.state,
+            result.text,
+            ctx.ui.theme,
+            title,
+            file.path,
+          ));
         });
       },
     });
@@ -598,7 +616,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   };
 
   const openUrl = async (url: string): Promise<boolean> => {
-    const { command, args } = openUrlArgs(url);
+    const { command, args } = openExternalArgs(url);
     const result = await pi.exec(command, args, { timeout: 5000 });
     return result.code === 0;
   };

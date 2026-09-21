@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { Sidebar } from "../extensions/pi-slate/sidebar.ts";
+import { DOUBLE_CLICK_MS, Sidebar } from "../extensions/pi-slate/sidebar.ts";
 import { DiffWorkspaceView, type WorkspaceView } from "../extensions/pi-slate/workspace.ts";
 import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
 
@@ -94,9 +94,10 @@ test("clicking a changed file selects it instead of copying its path", () => {
   const copied: string[] = [];
   sidebar.setActions({
     copyPath: (filePath) => copied.push(filePath),
+    openFile() {},
     selectFile: (file) => {
       selected.push(file);
-      sidebar.setSelectedPreview(new DiffWorkspaceView(file.path, "diff", "+ok", theme(), file.path));
+      sidebar.setSelectedPreview(new DiffWorkspaceView(file.path, "diff", "+ok", theme(), file.path, file.path));
     },
   });
   sidebar.setFiles([
@@ -114,6 +115,73 @@ test("clicking a changed file selects it instead of copying its path", () => {
   const labels = sidebar.render(40).map(strip);
   assert.ok(labels.some((line) => line.includes("> M src/a.ts")));
   assert.ok(labels.some((line) => line.includes("Preview · src/a.ts") && line.includes("[clear]")));
+});
+
+test("two rapid clicks on the same file row open that path once", () => {
+  const sidebar = attachSidebar();
+  const selected: FileChange[] = [];
+  const opened: string[] = [];
+  sidebar.setActions({
+    copyPath() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile: (file) => {
+      selected.push(file);
+      sidebar.setSelectedPreview(new DiffWorkspaceView(file.path, "diff", "+ok", theme(), file.path, file.path));
+    },
+  });
+  sidebar.setFiles([
+    { index: " ", worktree: "M", path: "src/a.ts" },
+    { index: "?", worktree: "?", path: "src/b.ts" },
+  ]);
+  sidebar.render(40);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3 })), { handled: true });
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3 })), { handled: true });
+  assert.equal(selected.length, 2);
+  assert.equal(selected[0]?.path, "src/a.ts");
+  assert.deepEqual(opened, ["src/a.ts"]);
+});
+
+test("a late second click on a file row selects it but does not open", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000 });
+  const sidebar = attachSidebar();
+  const selected: FileChange[] = [];
+  const opened: string[] = [];
+  sidebar.setActions({
+    copyPath() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile: (file) => selected.push(file),
+  });
+  sidebar.setFiles([
+    { index: " ", worktree: "M", path: "src/a.ts" },
+    { index: "?", worktree: "?", path: "src/b.ts" },
+  ]);
+  sidebar.render(40);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3 })), { handled: true });
+  t.mock.timers.tick(DOUBLE_CLICK_MS + 1);
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3 })), { handled: true });
+  assert.equal(selected.length, 2);
+  assert.deepEqual(opened, []);
+});
+
+test("double-clicking a preview with a real path opens that file", () => {
+  const sidebar = attachSidebar();
+  const opened: string[] = [];
+  sidebar.setActions({
+    copyPath() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile() {},
+  });
+  sidebar.setFiles([{ index: " ", worktree: "M", path: "src/a.ts" }]);
+  sidebar.setSelectedPreview(new DiffWorkspaceView("src/a.ts", "diff", "+ok", theme(), "src/a.ts", "src/a.ts"));
+  const labels = sidebar.render(40).map(strip);
+  const preview = labels.findIndex((line) => line.includes("Preview · src/a.ts"));
+  assert.ok(preview >= 0);
+
+  assert.equal(sidebar.handleMouse(mouse({ type: "click", y: preview + 1 })), undefined);
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: preview + 1 })), { handled: true });
+  assert.deepEqual(opened, ["src/a.ts"]);
 });
 
 test("summary leaves blank lines between its sections and shows a disjoint activity breakdown", () => {

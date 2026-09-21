@@ -54,8 +54,11 @@ export type SidebarContextData = {
   spend: number;
 };
 
+export const DOUBLE_CLICK_MS = 400;
+
 export type SidebarActions = {
   copyPath(filePath: string): void;
+  openFile(filePath: string): void;
   selectFile(file: FileChange): void;
   persistWidth?(columns: number | undefined): void;
 };
@@ -86,6 +89,7 @@ export class Sidebar implements Component {
   private selectedFileKey?: string;
   private selectedActivityRow?: number;
   private lastClear?: { y: number; x0: number; x1: number };
+  private lastClick?: { target: string; at: number };
   private cwd = "";
   private home = homedir();
   private contentCached?: { key: string; lines: string[] };
@@ -137,6 +141,10 @@ export class Sidebar implements Component {
 
   copyPath(filePath: string): void {
     this.actions?.copyPath(filePath);
+  }
+
+  openFile(filePath: string): void {
+    this.actions?.openFile(filePath);
   }
 
   /** Temporary image preview; it overrides but never discards a selected file preview. */
@@ -254,6 +262,7 @@ export class Sidebar implements Component {
       this.selectedFileKey = fileKey(file);
       this.setView(undefined);
       this.actions?.selectFile(file);
+      if (this.consumeDoubleClick(`file:${file.path}`)) this.openFile(file.path);
       return { handled: true };
     }
     if (
@@ -273,6 +282,13 @@ export class Sidebar implements Component {
       this.contentCached = undefined;
       this.tui?.requestRender();
       return { handled: true };
+    }
+    if (event.type === "click" && event.button === "left" && event.y >= peekStart && event.y < peekStart + peekHeight) {
+      const path = view?.filePath;
+      if (path && this.consumeDoubleClick(`preview:${path}`)) {
+        this.openFile(path);
+        return { handled: true };
+      }
     }
     if (event.type !== "click" || event.button !== "left" || !view?.handleClick) return undefined;
     const y = event.y - peekBodyStart;
@@ -322,6 +338,7 @@ export class Sidebar implements Component {
     this.selectedFileKey = undefined;
     this.selectedActivityRow = undefined;
     this.lastClear = undefined;
+    this.lastClick = undefined;
     this.cwd = "";
     this.contentCached = undefined;
     this.dockCached = undefined;
@@ -429,6 +446,14 @@ export class Sidebar implements Component {
       const colored = `${prefix}${theme.fg(mark.tone, mark.mark)} ${theme.fg("muted", label)}`;
       return this.decorateLine(selected ? theme.bold(colored) : colored, width, theme);
     });
+  }
+
+  private consumeDoubleClick(target: string): boolean {
+    const at = Date.now();
+    const previous = this.lastClick;
+    const doubled = Boolean(previous && previous.target === target && at - previous.at <= DOUBLE_CLICK_MS);
+    this.lastClick = doubled ? undefined : { target, at };
+    return doubled;
   }
 
   private activityView(): TurnLogView {

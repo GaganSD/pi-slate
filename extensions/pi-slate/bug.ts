@@ -50,10 +50,14 @@ export function parseGhIssueUrl(stdout: string): string | undefined {
   return match?.[0];
 }
 
+export function openExternalArgs(target: string, platform = process.platform): { command: string; args: string[] } {
+  if (platform === "darwin") return { command: "open", args: [target] };
+  if (platform === "win32") return { command: "cmd", args: ["/c", "start", "", `"${target}"`] };
+  return { command: "xdg-open", args: [target] };
+}
+
 export function openUrlArgs(url: string, platform = process.platform): { command: string; args: string[] } {
-  if (platform === "darwin") return { command: "open", args: [url] };
-  if (platform === "win32") return { command: "cmd", args: ["/c", "start", "", `"${url}"`] };
-  return { command: "xdg-open", args: [url] };
+  return openExternalArgs(url, platform);
 }
 
 export function ghCreateIssueArgs(title: string, body: string): string[] {
