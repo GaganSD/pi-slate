@@ -23,7 +23,7 @@ type PendingCall = {
   input?: Record<string, unknown>;
 };
 
-const FILTERS: TurnFilter[] = ["tool", "shell"];
+export const TURN_FILTERS: TurnFilter[] = ["tool", "shell"];
 
 /** Transient, UI-local facts observed during the current user prompt. */
 export class TurnImpactTracker {
@@ -103,10 +103,6 @@ export class TurnImpactTracker {
       events: this.events,
     };
   }
-}
-
-export function turnFilters(): TurnFilter[] {
-  return FILTERS;
 }
 
 export function isShellTool(toolName: string): boolean {

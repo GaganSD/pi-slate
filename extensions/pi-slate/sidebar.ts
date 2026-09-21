@@ -32,13 +32,12 @@ import {
   type FileChange,
 } from "./files-modified.ts";
 import { installSidebarSplit } from "./sidebar-split.ts";
-import { displayedTokenRate } from "./token-rate.ts";
 import type { WorkspaceView } from "./workspace.ts";
 import { TurnLogView } from "./turn-log.ts";
-import { formatTurnImpact, turnFilters, type TurnFilter, type TurnImpactSnapshot } from "./turn-impact.ts";
+import { formatTurnImpact, TURN_FILTERS, type TurnFilter, type TurnImpactSnapshot } from "./turn-impact.ts";
 import {
   filesWidgetDesiredHeight,
-  sidebarDockLines,
+  SIDEBAR_DOCK_LINES,
   sidebarRowSlots,
   splitSidebarContent,
 } from "./workspace-layout.ts";
@@ -172,7 +171,7 @@ export class Sidebar implements Component {
       this.contextData.tokens === data.tokens &&
       this.contextData.percent === data.percent &&
       this.contextData.spend === data.spend &&
-      displayedTokenRate(this.contextData.tokensPerSec) === displayedTokenRate(data.tokensPerSec)
+      Math.round(this.contextData.tokensPerSec) === Math.round(data.tokensPerSec)
     ) {
       return;
     }
@@ -233,14 +232,13 @@ export class Sidebar implements Component {
 
     const { summaryHeight, filesHeight, dividerHeight, peekHeight, filesStart, impactStart } = this.lastSlots;
     const peekStart = summaryHeight + dividerHeight;
-    const filters = turnFilters();
     const impactIndex = event.y - impactStart;
-    const overImpact = impactStart > 0 && impactIndex >= 0 && impactIndex < filters.length;
+    const overImpact = impactStart > 0 && impactIndex >= 0 && impactIndex < TURN_FILTERS.length;
     if (event.type === "click" && event.button === "left" && overImpact) {
       this.selectedFileKey = undefined;
-      this.selectedTurn = filters[impactIndex];
+      this.selectedTurn = TURN_FILTERS[impactIndex];
       this.setView(undefined);
-      this.setSelectedPreview(this.turnView(filters[impactIndex]!));
+      this.setSelectedPreview(this.turnView(TURN_FILTERS[impactIndex]!));
       return { handled: true, render: true };
     }
     if (event.type === "wheel" && event.y >= filesStart && event.y < filesStart + filesHeight) {
@@ -291,12 +289,9 @@ export class Sidebar implements Component {
     this.syncOverlayWidth();
     const theme = this.theme;
     const height = Math.max(1, this.tui?.terminal.rows ?? 1);
-    const { contentHeight, dockHeight } = sidebarRowSlots(
-      height,
-      sidebarDockLines(),
-    );
+    const { contentHeight, dockHeight } = sidebarRowSlots(height, SIDEBAR_DOCK_LINES);
     const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedTurn ?? ""}`;
-    const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${displayedTokenRate(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
+    const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${Math.round(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
       ? this.contentCached.lines
       : this.contentLines(width, contentHeight, theme);
@@ -371,9 +366,8 @@ export class Sidebar implements Component {
     if (height < 1) return [];
     const empty = this.decorateLine("", width, theme);
     const files = this.filesLines(width, filesHeight, theme);
-    const filters = turnFilters();
     const impact = formatTurnImpact(this.turnImpact).map((line, index) => {
-      const selected = filters[index] === this.selectedTurn;
+      const selected = TURN_FILTERS[index] === this.selectedTurn;
       const text = `${selected ? "> " : "  "}${line}`;
       if (selected) return this.decorateLine(theme ? theme.bold(theme.fg("muted", text)) : text, width, theme);
       return this.body(text, width, theme, "muted");

@@ -35,7 +35,7 @@ import {
   filesWidgetDesiredHeight,
   fitImageCells,
   placeWorkspaceImage,
-  sidebarDockLines,
+  SIDEBAR_DOCK_LINES,
   sidebarRowSlots,
   splitSidebarContent,
   workspacePaneSlots,
@@ -121,8 +121,8 @@ test("sidebar rows pin the footer dock and give the rest to content", () => {
   assert.deepEqual(sidebarRowSlots(4), { contentHeight: 0, dockHeight: 4 });
   assert.deepEqual(sidebarRowSlots(5), { contentHeight: 1, dockHeight: 4 });
   assert.deepEqual(sidebarRowSlots(20), { contentHeight: 16, dockHeight: 4 });
-  assert.equal(sidebarDockLines(), 4);
-  assert.deepEqual(sidebarRowSlots(20, sidebarDockLines()), { contentHeight: 16, dockHeight: 4 });
+  assert.equal(SIDEBAR_DOCK_LINES, 4);
+  assert.deepEqual(sidebarRowSlots(20, SIDEBAR_DOCK_LINES), { contentHeight: 16, dockHeight: 4 });
 });
 
 test("MCP and skill counts share the Context resource line", () => {
@@ -173,10 +173,10 @@ test("sidebar content uses a compact summary and retains Preview", () => {
 });
 
 test("workspace pane leaves one row of padding above the image", () => {
-  assert.deepEqual(workspacePaneSlots(0), { imageHeight: 0, captionHeight: 0 });
-  assert.deepEqual(workspacePaneSlots(1), { imageHeight: 1, captionHeight: 0 });
-  assert.deepEqual(workspacePaneSlots(3), { imageHeight: 2, captionHeight: 0 });
-  assert.deepEqual(workspacePaneSlots(20), { imageHeight: 19, captionHeight: 0 });
+  assert.equal(workspacePaneSlots(0), 0);
+  assert.equal(workspacePaneSlots(1), 1);
+  assert.equal(workspacePaneSlots(3), 2);
+  assert.equal(workspacePaneSlots(20), 19);
 });
 
 test("images contain-fit and never upscale", () => {

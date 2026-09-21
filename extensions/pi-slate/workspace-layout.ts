@@ -1,10 +1,6 @@
 export const SIDEBAR_DOCK_LINES = 4;
 export const FILES_WIDGET_MAX_LINES = 5;
 
-export function sidebarDockLines(): number {
-  return SIDEBAR_DOCK_LINES;
-}
-
 export function sidebarRowSlots(
   height: number,
   dockLines = SIDEBAR_DOCK_LINES,
@@ -46,13 +42,9 @@ export function splitSidebarContent(
   return { summaryHeight, filesHeight, dividerHeight, peekHeight };
 }
 
-export function workspacePaneSlots(height: number): {
-  imageHeight: number;
-  captionHeight: number;
-} {
+export function workspacePaneSlots(height: number): number {
   const paneHeight = Math.max(0, Math.floor(height));
-  if (paneHeight <= 1) return { imageHeight: paneHeight, captionHeight: 0 };
-  return { imageHeight: paneHeight - 1, captionHeight: 0 };
+  return paneHeight <= 1 ? paneHeight : paneHeight - 1;
 }
 
 export function fitImageCells(

@@ -5,7 +5,6 @@ import {
   fileAtPanelRow,
   fileMark,
   filesPanel,
-  formatFileCode,
   formatFileLabel,
   parsePorcelain,
   sameFiles,
@@ -34,7 +33,6 @@ test("parsePorcelain skips junk and keeps later valid rows", () => {
 });
 
 test("file labels stay git-status short and show renames", () => {
-  assert.equal(formatFileCode(file("a.ts")), " M");
   assert.equal(formatFileLabel(file("a.ts")), "a.ts");
   assert.equal(formatFileLabel({ index: "R", worktree: " ", path: "new.ts", origPath: "old.ts" }), "old.ts → new.ts");
 });
