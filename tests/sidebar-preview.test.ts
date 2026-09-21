@@ -193,7 +193,7 @@ test("context dock keeps the heading, rule, and spend", () => {
   assert.deepEqual(dock, [
     "─",
     "Context",
-    "18,958 tokens (2%) · 42 tokens/sec",
+    "18,958 tokens · 2% used · 42 tokens/sec",
     "$1.23 · 12 skills loaded · 0 MCPs connected",
   ]);
 });

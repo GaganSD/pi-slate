@@ -84,8 +84,8 @@ test("sidebar context labels match the OpenCode-style facts", () => {
   assert.equal(formatPercent(null), "—%");
   assert.equal(formatSpend(1.234), "$1.23");
   assert.equal(formatSpend(null), "$0.00");
-  assert.equal(formatContextTokens(3485, 2.4, 42.4), "3,485 tokens (2%) · 42 tokens/sec");
-  assert.equal(formatContextTokens(null, null, null), "— tokens (—%) · — tokens/sec");
+  assert.equal(formatContextTokens(3485, 2.4, 42.4), "3,485 tokens · 2% used · 42 tokens/sec");
+  assert.equal(formatContextTokens(null, null, null), "— tokens · —% used · — tokens/sec");
 });
 
 test("model label stays safe with missing data", () => {
