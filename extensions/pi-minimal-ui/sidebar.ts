@@ -220,20 +220,16 @@ export class Sidebar implements Component {
     return this.effectiveView()?.id;
   }
 
+  handleSplitMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    const sidebarWidth = this.displayedWidth(event.width);
+    if (sidebarWidth <= 0) return undefined;
+    const divider = event.width - sidebarWidth;
+    return this.handleResizeMouse(event, event.x >= divider - 1 && event.x <= divider + 1);
+  }
+
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    if (this.resizing) {
-      if (event.type === "drag" || event.type === "move") return this.moveResizeGuide(event.screenX);
-      if (event.type === "release") {
-        this.commitResize(event.screenX);
-        return { handled: true, render: true };
-      }
-      if (event.type === "click") return { handled: true };
-    }
-    if (event.type === "press" && isSidebarResizeHandle(event)) {
-      this.beginResize(event.screenX);
-      return { handled: true, capture: true, render: true };
-    }
-    if (event.type === "click" && isSidebarResizeHandle(event)) return { handled: true };
+    const resize = this.handleResizeMouse(event, isSidebarResizeHandle(event));
+    if (resize) return resize;
 
     const { summaryHeight, filesHeight, dividerHeight, peekHeight, filesStart, impactStart } = this.lastSlots;
     const peekStart = summaryHeight + dividerHeight;
@@ -502,6 +498,23 @@ export class Sidebar implements Component {
 
   private rule(width: number, theme: Theme): string {
     return `${theme.fg("borderMuted", "│")}${theme.fg("borderMuted", "─".repeat(Math.max(0, width - 1)))}`;
+  }
+
+  private handleResizeMouse(event: TuiMouseEvent, onHandle: boolean): TuiMouseEventResult | undefined {
+    if (this.resizing) {
+      if (event.type === "drag" || event.type === "move") return this.moveResizeGuide(event.screenX);
+      if (event.type === "release") {
+        this.commitResize(event.screenX);
+        return { handled: true, render: true };
+      }
+      if (event.type === "click") return { handled: true };
+    }
+    if (onHandle && event.type === "press" && event.button === "left") {
+      this.beginResize(event.screenX);
+      return { handled: true, capture: true, render: true };
+    }
+    if (onHandle && event.type === "click" && event.button === "left") return { handled: true };
+    return undefined;
   }
 
   private displayedWidth(totalWidth = this.tui?.terminal.columns ?? 0): number {

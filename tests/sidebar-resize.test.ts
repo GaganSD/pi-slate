@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { OverlayHandle, OverlayOptions, TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
-import { isSidebarResizeHandle, sidebarWidthFromScreenX } from "../extensions/pi-minimal-ui/layout.ts";
+import {
+  Text,
+  TuiAltScreen,
+  type OverlayHandle,
+  type OverlayOptions,
+  type TUI,
+  type Terminal,
+  type TuiMouseEvent,
+} from "@earendil-works/pi-tui";
+import { isSidebarResizeHandle, sidebarWidthFromScreenX, workspaceColumnWidth } from "../extensions/pi-minimal-ui/layout.ts";
 import { Sidebar } from "../extensions/pi-minimal-ui/sidebar.ts";
 import type { FileChange } from "../extensions/pi-minimal-ui/files-modified.ts";
 
@@ -139,4 +147,62 @@ test("clicking the gutter does not select a changed file", () => {
   sidebar.render(40);
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", x: 0, y: 3 })), { handled: true });
   assert.deepEqual(selected, []);
+});
+
+class MouseTerminal implements Terminal {
+  columns = 140;
+  rows = 24;
+  kittyProtocolActive = false;
+  private input?: (data: string) => void;
+  start(input: (data: string) => void): void {
+    this.input = input;
+  }
+  stop(): void {}
+  async drainInput(): Promise<void> {}
+  write(_data: string): void {}
+  moveBy(_lines: number): void {}
+  hideCursor(): void {}
+  showCursor(): void {}
+  clearLine(): void {}
+  clearFromCursor(): void {}
+  clearScreen(): void {}
+  setTitle(_title: string): void {}
+  setProgress(_active: boolean): void {}
+  send(data: string): void {
+    this.input?.(data);
+  }
+}
+
+function sgr(button: number, x: number, y: number, release = false): string {
+  return `\x1b[<${button};${x + 1};${y + 1}${release ? "m" : "M"}`;
+}
+
+test("fullscreen mouse drag from the chat side of the divider commits once", (t) => {
+  const terminal = new MouseTerminal();
+  const tui = new TuiAltScreen(terminal);
+  const sidebar = new Sidebar();
+  const persisted: number[] = [];
+  tui.setLayoutRoot(new Text("chat", 0, 0));
+  sidebar.attach(tui, theme());
+  sidebar.setActions({
+    copyPath() {},
+    selectFile() {},
+    persistWidth: (columns) => persisted.push(columns),
+  });
+  t.after(() => {
+    tui.stop({ preserveScreen: true });
+    sidebar.dispose();
+  });
+  tui.start();
+  tui.renderNow();
+  assert.equal(sidebar.splitActive, true);
+
+  const divider = terminal.columns - workspaceColumnWidth(terminal.columns);
+  terminal.send(sgr(0, divider - 1, 2));
+  terminal.send(sgr(32, divider - 21, 2));
+  terminal.send(sgr(0, divider - 21, 2, true));
+  tui.renderNow();
+
+  assert.equal(sidebar.preferredWidth, workspaceColumnWidth(terminal.columns) + 20);
+  assert.deepEqual(persisted, [sidebar.preferredWidth]);
 });

@@ -4,6 +4,7 @@ import {
   type Component,
   type TUI,
   type TuiMouseEvent,
+  type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import {
   SIDEBAR_MIN_TERMINAL_WIDTH,
@@ -38,18 +39,39 @@ class SidebarGutter implements Component {
   }
 }
 
+type SplitMousePane = Component & {
+  handleSplitMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;
+};
+
 class SidebarSplit extends HStack {
+  private readonly pane: SplitMousePane;
+
   chat(): Component {
     return this.entries[0]?.component ?? this.children[0]!;
   }
 
+  override handleMouse(event: TuiMouseEvent) {
+    const result = this.pane.handleSplitMouse?.(event);
+    if (!result?.handled && !result?.capture && !result?.focus) return undefined;
+    return {
+      ...result,
+      handled: true as const,
+      target: {
+        component: this,
+        originX: event.screenX - event.x,
+        originY: event.screenY - event.y,
+        width: event.width,
+        height: event.height,
+      },
+    };
+  }
+
   constructor(chat: Component, pane: Component, preferredWidth?: () => number | undefined) {
-    const gutter = new SidebarGutter(pane);
     super([
       // Skip full-width intrinsic measurement: switching widths thrashes leaf render caches.
       { component: chat, basis: 0, grow: 1, shrink: 1, minSize: 1 },
       {
-        component: gutter,
+        component: new SidebarGutter(pane),
         grow: 0,
         shrink: 0,
         minSize: SIDEBAR_MIN_WIDTH,
@@ -62,6 +84,7 @@ class SidebarSplit extends HStack {
         },
       },
     ]);
+    this.pane = pane;
     Object.assign(this, { [SIDEBAR_SPLIT]: true });
   }
 }
