@@ -10,7 +10,7 @@ import {
   type Terminal,
   type TuiMouseEvent,
 } from "@earendil-works/pi-tui";
-import { isSidebarResizeHandle, sidebarWidthFromScreenX, workspaceColumnWidth } from "../extensions/pi-slate/layout.ts";
+import { isSidebarResizeHandle, percentFromColumns, sidebarWidthFromScreenX, workspaceColumnWidth } from "../extensions/pi-slate/layout.ts";
 import { Sidebar } from "../extensions/pi-slate/sidebar.ts";
 import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
 
@@ -101,7 +101,7 @@ test("dragging the gutter moves a ghost guide and only commits width on release"
     handled: true,
     render: true,
   });
-  assert.equal(sidebar.preferredWidth, sidebarWidthFromScreenX(140, 92));
+  assert.equal(sidebar.preferredWidth, percentFromColumns(140, sidebarWidthFromScreenX(140, 92)));
   assert.deepEqual(persisted, [sidebar.preferredWidth]);
   assert.equal(hidden.length, 1);
 });
@@ -125,7 +125,7 @@ test("releasing the gutter on the current width does not persist", () => {
 test("a stationary press on the inner handle column does not persist", () => {
   const { sidebar, overlays } = attachSidebar();
   const persisted: number[] = [];
-  sidebar.setPreferredWidth(40);
+  sidebar.setPreferredWidth(29);
   sidebar.setActions({
     copyPath() {},
     selectFile() {},
@@ -133,12 +133,12 @@ test("a stationary press on the inner handle column does not persist", () => {
       if (columns !== undefined) persisted.push(columns);
     },
   });
-  sidebar.render(40);
-  assert.equal(overlays[0]?.width, 40);
+  sidebar.render(workspaceColumnWidth(140, 29));
+  assert.equal(overlays[0]?.width, workspaceColumnWidth(140, 29));
   sidebar.handleMouse(mouse({ type: "press", x: 1, screenX: 101 }));
   assert.equal(overlays.at(-1)?.col, 100);
   sidebar.handleMouse(mouse({ type: "release", x: 1, screenX: 101 }));
-  assert.equal(sidebar.preferredWidth, 40);
+  assert.equal(sidebar.preferredWidth, 29);
   assert.deepEqual(persisted, []);
 });
 
@@ -211,6 +211,9 @@ test("fullscreen mouse drag from the chat side of the divider commits once", (t)
   terminal.send(sgr(0, divider - 21, 2, true));
   tui.renderNow();
 
-  assert.equal(sidebar.preferredWidth, workspaceColumnWidth(terminal.columns) + 20);
+  assert.equal(
+    sidebar.preferredWidth,
+    percentFromColumns(terminal.columns, workspaceColumnWidth(terminal.columns) + 20),
+  );
   assert.deepEqual(persisted, [sidebar.preferredWidth]);
 });

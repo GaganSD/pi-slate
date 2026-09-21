@@ -39,15 +39,14 @@ import {
   mainColumnWidth,
   modelLabel,
   parseMcpConnectedCount,
-  parseSidebarWidth,
+  parseSidebarPercent,
   parseSidebarWidthArg,
   parseSlateArgs,
   slateArgumentCompletions,
   SLATE_USAGE,
-  SIDEBAR_MIN_WIDTH,
-  SIDEBAR_WIDTH_MEDIUM,
-  SIDEBAR_WIDTH_NARROW,
-  SIDEBAR_WIDTH_WIDE,
+  SIDEBAR_PERCENT_MEDIUM,
+  SIDEBAR_PERCENT_NARROW,
+  SIDEBAR_PERCENT_WIDE,
   withCurrent,
   withoutCurrent,
 } from "./layout.ts";
@@ -55,7 +54,7 @@ import {
 type SlateConfig = {
   density: "comfortable" | "compact";
   footer: "standard" | "minimal";
-  sidebarWidth?: number;
+  sidebarPercent?: number;
 };
 
 const CONFIG_PATH = join(getAgentDir(), "pi-slate.json");
@@ -67,11 +66,11 @@ const DEFAULT_CONFIG: SlateConfig = {
 function loadConfig(): SlateConfig {
   try {
     const value = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<SlateConfig>;
-    const sidebarWidth = parseSidebarWidth(value.sidebarWidth);
+    const sidebarPercent = parseSidebarPercent(value.sidebarPercent);
     return {
       density: value.density === "compact" ? "compact" : "comfortable",
       footer: value.footer === "minimal" ? "minimal" : "standard",
-      ...(sidebarWidth === undefined ? {} : { sidebarWidth }),
+      ...(sidebarPercent === undefined ? {} : { sidebarPercent }),
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -84,11 +83,17 @@ function saveConfig(config: SlateConfig): void {
   renameSync(temporaryPath, CONFIG_PATH);
 }
 
-function withSidebarWidth(current: SlateConfig, columns: number | undefined): SlateConfig {
+function withSidebarPercent(current: SlateConfig, percent: number | undefined): SlateConfig {
   const next = { ...current };
-  if (columns === undefined) delete next.sidebarWidth;
-  else next.sidebarWidth = columns;
+  if (percent === undefined) delete next.sidebarPercent;
+  else next.sidebarPercent = percent;
   return next;
+}
+
+function widthMessage(percent: number | undefined): string {
+  if (percent === undefined) return "Sidebar width reset to default";
+  if (percent === SIDEBAR_PERCENT_NARROW) return "Sidebar width set to minimum";
+  return `Sidebar width set to ${percent}%`;
 }
 
 function centeredLine(content: string, width: number): string {
@@ -246,11 +251,11 @@ export default function piSlate(pi: ExtensionAPI): void {
     sidebar.setCwd(ctx.cwd);
     sidebar.setSelectedPreview(undefined);
     sidebar.setTurnImpact(turnImpact.reset());
-    sidebar.setPreferredWidth(config.sidebarWidth);
+    sidebar.setPreferredWidth(config.sidebarPercent);
     sidebar.setActions({
-      persistWidth: (columns) => {
+      persistWidth: (percent) => {
         try {
-          const next = withSidebarWidth(config, columns);
+          const next = withSidebarPercent(config, percent);
           saveConfig(next);
           config = next;
         } catch (error) {
@@ -401,7 +406,7 @@ export default function piSlate(pi: ExtensionAPI): void {
     try {
       saveConfig(next);
       config = next;
-      sidebar.setPreferredWidth(config.sidebarWidth);
+      sidebar.setPreferredWidth(config.sidebarPercent);
       activeEditor?.setPaddingX(config.density === "compact" ? 0 : 1);
       requestRender();
       ctx.ui.notify(message, "info");
@@ -434,33 +439,37 @@ export default function piSlate(pi: ExtensionAPI): void {
   };
 
   const pickWidth = async (ctx: ExtensionContext): Promise<{ picked: true; width?: number } | undefined> => {
-    const defaultLabel = "Default";
-    const narrowLabel = `Narrow (${SIDEBAR_WIDTH_NARROW})`;
-    const mediumLabel = `Medium (${SIDEBAR_WIDTH_MEDIUM})`;
-    const wideLabel = `Wide (${SIDEBAR_WIDTH_WIDE})`;
+    const defaultLabel = "Default (20%)";
+    const narrowLabel = "Narrow (minimum)";
+    const mediumLabel = "Medium (30%)";
+    const wideLabel = "Wide (40%)";
     const customLabel = "Custom…";
+    const named = config.sidebarPercent === undefined
+      || config.sidebarPercent === SIDEBAR_PERCENT_NARROW
+      || config.sidebarPercent === SIDEBAR_PERCENT_MEDIUM
+      || config.sidebarPercent === SIDEBAR_PERCENT_WIDE;
     const choice = await ctx.ui.select("Sidebar width", [
-      withCurrent(defaultLabel, config.sidebarWidth === undefined),
-      withCurrent(narrowLabel, config.sidebarWidth === SIDEBAR_WIDTH_NARROW),
-      withCurrent(mediumLabel, config.sidebarWidth === SIDEBAR_WIDTH_MEDIUM),
-      withCurrent(wideLabel, config.sidebarWidth === SIDEBAR_WIDTH_WIDE),
-      customLabel,
+      withCurrent(defaultLabel, config.sidebarPercent === undefined),
+      withCurrent(narrowLabel, config.sidebarPercent === SIDEBAR_PERCENT_NARROW),
+      withCurrent(mediumLabel, config.sidebarPercent === SIDEBAR_PERCENT_MEDIUM),
+      withCurrent(wideLabel, config.sidebarPercent === SIDEBAR_PERCENT_WIDE),
+      withCurrent(customLabel, config.sidebarPercent !== undefined && !named),
     ]);
     if (!choice) return undefined;
     const key = withoutCurrent(choice);
     if (key === defaultLabel) return { picked: true };
-    if (key === narrowLabel) return { picked: true, width: SIDEBAR_WIDTH_NARROW };
-    if (key === mediumLabel) return { picked: true, width: SIDEBAR_WIDTH_MEDIUM };
-    if (key === wideLabel) return { picked: true, width: SIDEBAR_WIDTH_WIDE };
+    if (key === narrowLabel) return { picked: true, width: SIDEBAR_PERCENT_NARROW };
+    if (key === mediumLabel) return { picked: true, width: SIDEBAR_PERCENT_MEDIUM };
+    if (key === wideLabel) return { picked: true, width: SIDEBAR_PERCENT_WIDE };
     if (key !== customLabel) return undefined;
-    const typed = await ctx.ui.input("Sidebar columns", String(SIDEBAR_MIN_WIDTH));
+    const typed = await ctx.ui.input("Sidebar percent", "30");
     if (!typed) return undefined;
     const parsed = parseSidebarWidthArg(typed);
-    if (!parsed.ok || parsed.width === undefined) {
+    if (!parsed.ok || parsed.percent === undefined) {
       ctx.ui.notify(SLATE_USAGE, "error");
       return undefined;
     }
-    return { picked: true, width: parsed.width };
+    return { picked: true, width: parsed.percent };
   };
 
   pi.registerCommand("slate", {
@@ -497,21 +506,13 @@ export default function piSlate(pi: ExtensionAPI): void {
       }
 
       if (parsed.kind === "width") {
-        apply(
-          withSidebarWidth(config, parsed.width),
-          parsed.width === undefined ? "Sidebar width reset to default" : `Sidebar width set to ${parsed.width}`,
-          ctx,
-        );
+        apply(withSidebarPercent(config, parsed.width), widthMessage(parsed.width), ctx);
         return;
       }
 
       const picked = await pickWidth(ctx);
       if (!picked) return;
-      apply(
-        withSidebarWidth(config, picked.width),
-        picked.width === undefined ? "Sidebar width reset to default" : `Sidebar width set to ${picked.width}`,
-        ctx,
-      );
+      apply(withSidebarPercent(config, picked.width), widthMessage(picked.width), ctx);
     },
   });
 }

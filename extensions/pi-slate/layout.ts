@@ -125,30 +125,32 @@ export function maxSidebarWidth(totalWidth: number): number {
   return Math.max(0, totalWidth - SIDEBAR_MAIN_MIN_WIDTH);
 }
 
-export function parseSidebarWidth(value: unknown): number | undefined {
+export const SIDEBAR_PERCENT_MAX = 80;
+export const SIDEBAR_PERCENT_NARROW = 0;
+export const SIDEBAR_PERCENT_MEDIUM = 30;
+export const SIDEBAR_PERCENT_WIDE = 40;
+
+export function parseSidebarPercent(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  const columns = Math.round(value);
-  return columns >= 1 ? columns : undefined;
+  const percent = Math.round(value);
+  if (percent < 0 || percent > SIDEBAR_PERCENT_MAX) return undefined;
+  return percent;
 }
 
-export const SIDEBAR_WIDTH_NARROW = SIDEBAR_MIN_WIDTH;
-export const SIDEBAR_WIDTH_MEDIUM = 40;
-export const SIDEBAR_WIDTH_WIDE = 56;
-
-export function parseSidebarWidthArg(raw: string): { ok: true; width?: number } | { ok: false } {
-  const value = raw.trim().toLowerCase();
+export function parseSidebarWidthArg(raw: string): { ok: true; percent?: number } | { ok: false } {
+  const value = raw.trim().toLowerCase().replace(/%$/, "");
   if (value === "default") return { ok: true };
-  if (value === "narrow") return { ok: true, width: SIDEBAR_WIDTH_NARROW };
-  if (value === "medium") return { ok: true, width: SIDEBAR_WIDTH_MEDIUM };
-  if (value === "wide") return { ok: true, width: SIDEBAR_WIDTH_WIDE };
+  if (value === "narrow") return { ok: true, percent: SIDEBAR_PERCENT_NARROW };
+  if (value === "medium") return { ok: true, percent: SIDEBAR_PERCENT_MEDIUM };
+  if (value === "wide") return { ok: true, percent: SIDEBAR_PERCENT_WIDE };
   if (!/^\d+$/.test(value)) return { ok: false };
-  const columns = Number(value);
-  if (columns < SIDEBAR_MIN_WIDTH) return { ok: false };
-  return { ok: true, width: columns };
+  return parseSidebarPercent(Number(value)) === undefined
+    ? { ok: false }
+    : { ok: true, percent: Number(value) };
 }
 
 export const SLATE_USAGE =
-  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<columns>]";
+  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>]";
 
 export function withCurrent(label: string, current: boolean): string {
   return current ? `${label} (current)` : label;
@@ -199,9 +201,9 @@ export function parseSlateArgs(raw: string): SlateArgs {
     if (!tail) return { ok: true, kind: "width-menu" };
     const parsed = parseSidebarWidthArg(tail);
     if (!parsed.ok) return { ok: false };
-    return parsed.width === undefined
+    return parsed.percent === undefined
       ? { ok: true, kind: "width" }
-      : { ok: true, kind: "width", width: parsed.width };
+      : { ok: true, kind: "width", width: parsed.percent };
   }
   return { ok: false };
 }
@@ -213,11 +215,20 @@ export function slateArgumentCompletions(prefix: string): { value: string; label
   return matches.length ? matches : null;
 }
 
-export function workspaceColumnWidth(totalWidth: number, preferred?: number): number {
+export function clampSidebarColumns(totalWidth: number, columns: number): number {
   if (totalWidth < SIDEBAR_MIN_TERMINAL_WIDTH) return 0;
-  const fallback = Math.max(SIDEBAR_MIN_WIDTH, Math.floor(totalWidth * SIDEBAR_DEFAULT_RATIO));
-  const desired = preferred ?? fallback;
-  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(maxSidebarWidth(totalWidth), desired));
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(maxSidebarWidth(totalWidth), columns));
+}
+
+export function workspaceColumnWidth(totalWidth: number, preferredPercent?: number): number {
+  if (preferredPercent === SIDEBAR_PERCENT_NARROW) return clampSidebarColumns(totalWidth, SIDEBAR_MIN_WIDTH);
+  const ratio = preferredPercent === undefined ? SIDEBAR_DEFAULT_RATIO : preferredPercent / 100;
+  return clampSidebarColumns(totalWidth, Math.floor(totalWidth * ratio));
+}
+
+export function percentFromColumns(totalWidth: number, columns: number): number {
+  if (totalWidth < 1) return Math.round(SIDEBAR_DEFAULT_RATIO * 100);
+  return Math.max(1, Math.min(SIDEBAR_PERCENT_MAX, Math.round((columns / totalWidth) * 100)));
 }
 
 export function mainColumnWidth(totalWidth: number, preferred?: number): number {
@@ -225,7 +236,7 @@ export function mainColumnWidth(totalWidth: number, preferred?: number): number 
 }
 
 export function sidebarWidthFromScreenX(totalWidth: number, screenX: number): number {
-  return workspaceColumnWidth(totalWidth, totalWidth - screenX);
+  return clampSidebarColumns(totalWidth, totalWidth - screenX);
 }
 
 export function sidebarHandleColumn(totalWidth: number, sidebarWidth: number): number {

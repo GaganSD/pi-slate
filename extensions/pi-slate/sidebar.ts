@@ -14,7 +14,9 @@ import {
   formatContextResources,
   formatContextTokens,
   isSidebarResizeHandle,
-  parseSidebarWidth,
+  clampSidebarColumns,
+  parseSidebarPercent,
+  percentFromColumns,
   SIDEBAR_EDITOR_RESERVE,
   SIDEBAR_MIN_TERMINAL_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -122,7 +124,7 @@ export class Sidebar implements Component {
   }
 
   setPreferredWidth(width: number | undefined): void {
-    const next = width === undefined ? undefined : parseSidebarWidth(width);
+    const next = width === undefined ? undefined : parseSidebarPercent(width);
     if (this._preferredWidth === next) return;
     this._preferredWidth = next;
     this.syncOverlayWidth();
@@ -548,8 +550,9 @@ export class Sidebar implements Component {
     this.hideResizeGuide();
     this.resizing = false;
     if (next === this.resizeStartWidth || next <= 0) return;
-    this.setPreferredWidth(next);
-    this.actions?.persistWidth?.(next);
+    const percent = percentFromColumns(this.tui?.terminal.columns ?? 0, next);
+    this.setPreferredWidth(percent);
+    this.actions?.persistWidth?.(percent);
   }
 
   private showResizeGuide(screenX: number): void {
@@ -581,7 +584,7 @@ export class Sidebar implements Component {
 
   private widthFromPointer(screenX: number): number {
     const total = this.tui?.terminal.columns ?? 0;
-    return workspaceColumnWidth(
+    return clampSidebarColumns(
       total,
       this.resizeStartWidth + this.resizeStartScreenX - screenX,
     );
