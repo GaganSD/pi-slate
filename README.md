@@ -1,4 +1,4 @@
-# pi-minimal-ui
+# pi-slate
 
 A quiet Pi TUI: centered header, compact footer, sidebar, and a muted dark theme.
 
@@ -7,24 +7,24 @@ Presentation only. No new agent workflow, tools, or network service.
 ## Install
 
 ```bash
-pi install git:github.com/GaganSD/pi-extensions
+pi install git:github.com/GaganSD/pi-slate
 ```
 
-Pick `pi-minimal` in `/settings`, or set it in `~/.pi/agent/settings.json`:
+Pick `pi-slate` in `/settings`, or set it in `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "theme": "pi-minimal"
+  "theme": "pi-slate"
 }
 ```
 
-Project-local: `pi install -l git:github.com/GaganSD/pi-extensions`.
+Project-local: `pi install -l git:github.com/GaganSD/pi-slate`.
 
 ## Use
 
-- **Sidebar** — Summary (Files Changed, Last Turn), Preview, Context. Drag the left `│` to resize; width is saved in `~/.pi/agent/pi-minimal-ui.json`.
+- **Sidebar** — Summary (Files Changed, Last Turn), Preview, Context. Drag the left `│` to resize; width is saved in `~/.pi/agent/pi-slate.json`.
 - `/sidebar-width` — `default`, `narrow`, `medium`, `wide`, or a column count.
-- `/minimal-ui` — comfortable/compact editor, standard/minimal footer.
+- `/slate` — comfortable/compact editor, standard/minimal footer.
 - Click a changed file or Last Turn count to open Preview. Click a Last Turn row again for the full tool message.
 - Put the cursor on an `[image-N]` token to peek it. Image terminals render the file; others get text.
 
@@ -41,7 +41,7 @@ Fullscreen TUI only. Narrow or regular TUI falls back to Pi's overlay. Non-inter
 ## Remove
 
 ```bash
-pi remove git:github.com/GaganSD/pi-extensions
+pi remove git:github.com/GaganSD/pi-slate
 ```
 
 ## Development

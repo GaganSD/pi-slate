@@ -10,8 +10,8 @@ import {
   parsePorcelain,
   sameFiles,
   type FileChange,
-} from "../extensions/pi-minimal-ui/files-modified.ts";
-import { GitStatusPoller } from "../extensions/pi-minimal-ui/git-status.ts";
+} from "../extensions/pi-slate/files-modified.ts";
+import { GitStatusPoller } from "../extensions/pi-slate/git-status.ts";
 
 function file(path: string, index = " ", worktree = "M"): FileChange {
   return { index, worktree, path };

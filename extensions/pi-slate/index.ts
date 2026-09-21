@@ -46,21 +46,21 @@ import {
   SIDEBAR_WIDTH_WIDE,
 } from "./layout.ts";
 
-type MinimalUiConfig = {
+type SlateConfig = {
   density: "comfortable" | "compact";
   footer: "standard" | "minimal";
   sidebarWidth?: number;
 };
 
-const CONFIG_PATH = join(getAgentDir(), "pi-minimal-ui.json");
-const DEFAULT_CONFIG: MinimalUiConfig = {
+const CONFIG_PATH = join(getAgentDir(), "pi-slate.json");
+const DEFAULT_CONFIG: SlateConfig = {
   density: "comfortable",
   footer: "standard",
 };
 
-function loadConfig(): MinimalUiConfig {
+function loadConfig(): SlateConfig {
   try {
-    const value = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<MinimalUiConfig>;
+    const value = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<SlateConfig>;
     const sidebarWidth = parseSidebarWidth(value.sidebarWidth);
     return {
       density: value.density === "compact" ? "compact" : "comfortable",
@@ -72,13 +72,13 @@ function loadConfig(): MinimalUiConfig {
   }
 }
 
-function saveConfig(config: MinimalUiConfig): void {
+function saveConfig(config: SlateConfig): void {
   const temporaryPath = `${CONFIG_PATH}.${process.pid}.tmp`;
   writeFileSync(temporaryPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   renameSync(temporaryPath, CONFIG_PATH);
 }
 
-function withSidebarWidth(current: MinimalUiConfig, columns: number | undefined): MinimalUiConfig {
+function withSidebarWidth(current: SlateConfig, columns: number | undefined): SlateConfig {
   const next = { ...current };
   if (columns === undefined) delete next.sidebarWidth;
   else next.sidebarWidth = columns;
@@ -105,7 +105,7 @@ class MinimalHeader implements Component {
     const path = compactPath(ctx.cwd, homedir());
     const model = modelLabel(ctx.model);
     const effort = ctx.thinkingLevel ? ` · ${ctx.thinkingLevel}` : "";
-    const logoLines = process.env.TERM === "dumb" || process.env.PI_MINIMAL_UI_ASCII === "1"
+    const logoLines = process.env.TERM === "dumb" || process.env.PI_SLATE_ASCII === "1"
       ? PI_LOGO_ASCII
       : PI_LOGO;
     const column = this.columnWidth(width);
@@ -133,7 +133,7 @@ class MinimalFooter implements Component {
       onBranchChange(callback: () => void): () => void;
     },
     private readonly getContext: () => ExtensionContext,
-    private readonly getConfig: () => MinimalUiConfig,
+    private readonly getConfig: () => SlateConfig,
     private readonly columnWidth: (width: number) => number,
   ) {
     this.unsubscribe = footerData.onBranchChange(() => tui.requestRender());
@@ -179,7 +179,7 @@ class MinimalFooter implements Component {
   }
 }
 
-export default function piMinimalUi(pi: ExtensionAPI): void {
+export default function piSlate(pi: ExtensionAPI): void {
   const sidebar = new Sidebar();
   const images = installImagePlaceholders(pi, sidebar);
   let fileSnapshot = "";
@@ -196,7 +196,7 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
   let requestRender = (_force = false) => {};
 
   const getContext = (): ExtensionContext => {
-    if (!currentContext) throw new Error("pi-minimal-ui has not received a session context");
+    if (!currentContext) throw new Error("pi-slate has not received a session context");
     return currentContext;
   };
 
@@ -433,21 +433,21 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     },
   });
 
-  pi.registerCommand("minimal-ui", {
-    description: "Configure the pi-minimal-ui appearance",
+  pi.registerCommand("slate", {
+    description: "Configure the pi-slate appearance",
     handler: async (_args, ctx) => {
-      const setting = await ctx.ui.select("Minimal UI", ["Density", "Footer"]);
+      const setting = await ctx.ui.select("Slate", ["Density", "Footer"]);
       if (!setting) return;
       let nextConfig = { ...config };
 
       if (setting === "Density") {
         const value = await ctx.ui.select("Density", ["Comfortable", "Compact"]);
         if (!value) return;
-        nextConfig = { ...nextConfig, density: value.toLowerCase() as MinimalUiConfig["density"] };
+        nextConfig = { ...nextConfig, density: value.toLowerCase() as SlateConfig["density"] };
       } else {
         const value = await ctx.ui.select("Footer", ["Standard", "Minimal"]);
         if (!value) return;
-        nextConfig = { ...nextConfig, footer: value.toLowerCase() as MinimalUiConfig["footer"] };
+        nextConfig = { ...nextConfig, footer: value.toLowerCase() as SlateConfig["footer"] };
       }
 
       try {
@@ -455,10 +455,10 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
         config = nextConfig;
         activeEditor?.setPaddingX(config.density === "compact" ? 0 : 1);
         requestRender();
-        ctx.ui.notify("Minimal UI updated", "info");
+        ctx.ui.notify("Slate updated", "info");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Could not save Minimal UI settings: ${message}`, "error");
+        ctx.ui.notify(`Could not save Slate settings: ${message}`, "error");
       }
     },
   });

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI, TuiMouseEvent } from "@earendil-works/pi-tui";
-import { Sidebar } from "../extensions/pi-minimal-ui/sidebar.ts";
-import { DiffWorkspaceView, type WorkspaceView } from "../extensions/pi-minimal-ui/workspace.ts";
-import type { FileChange } from "../extensions/pi-minimal-ui/files-modified.ts";
+import { Sidebar } from "../extensions/pi-slate/sidebar.ts";
+import { DiffWorkspaceView, type WorkspaceView } from "../extensions/pi-slate/workspace.ts";
+import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
 
 function theme(): Theme {
   return {

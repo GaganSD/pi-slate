@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { WORKING_WORDS, createWordPicker } from "../extensions/pi-minimal-ui/working-words.ts";
+import { WORKING_WORDS, createWordPicker } from "../extensions/pi-slate/working-words.ts";
 
 test("shuffle bag deals every word once before repeating", () => {
   let i = 0;

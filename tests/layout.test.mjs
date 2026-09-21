@@ -29,7 +29,7 @@ import {
   SIDEBAR_WIDTH_NARROW,
   SIDEBAR_WIDTH_WIDE,
   workspaceColumnWidth,
-} from "../extensions/pi-minimal-ui/layout.ts";
+} from "../extensions/pi-slate/layout.ts";
 import {
   FILES_WIDGET_MAX_LINES,
   filesWidgetDesiredHeight,
@@ -39,7 +39,7 @@ import {
   sidebarRowSlots,
   splitSidebarContent,
   workspacePaneSlots,
-} from "../extensions/pi-minimal-ui/workspace-layout.ts";
+} from "../extensions/pi-slate/workspace-layout.ts";
 
 test("logo preserves the official four-row geometry and terminal aspect ratio", () => {
   assert.deepEqual(PI_LOGO, ["██████  ", "██  ██  ", "████  ██", "██    ██"]);
@@ -136,7 +136,7 @@ test("MCP and skill counts share the Context resource line", () => {
   assert.equal(countSkillCommands([
     { source: "skill", sourceInfo: { path: "/skills/a/SKILL.md" }, name: "a" },
     { source: "skill", sourceInfo: { path: "/skills/a/SKILL.md" }, name: "a:1" },
-    { source: "extension", sourceInfo: { path: "/ext.ts" }, name: "minimal-ui" },
+    { source: "extension", sourceInfo: { path: "/ext.ts" }, name: "slate" },
   ]), 1);
   assert.equal(parseMcpConnectedCount({ connectedCount: 2 }), 2);
   assert.equal(parseMcpConnectedCount({ connectedCount: -1 }), 0);

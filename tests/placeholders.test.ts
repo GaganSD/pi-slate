@@ -9,7 +9,7 @@ import {
   rewriteInsertedText,
   transformSubmittedText,
   type ImageAttachment,
-} from "../extensions/pi-minimal-ui/placeholders.ts";
+} from "../extensions/pi-slate/placeholders.ts";
 
 const PATH =
   "/var/folders/rf/b88_3vnj1f51k8qv9wpz8gw00000gn/T/pi-clipboard-f2634509-b0a8-489a-85f7-ce9dc69b976a.png";

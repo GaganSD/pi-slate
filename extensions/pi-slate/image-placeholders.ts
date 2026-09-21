@@ -12,8 +12,8 @@ import {
 } from "./placeholders.ts";
 import type { Sidebar } from "./sidebar.ts";
 
-const ORIGINAL_INSERT = Symbol.for("pi-minimal-ui.image-placeholders.insertTextAtCursor");
-const ORIGINAL_PASTE = Symbol.for("pi-minimal-ui.image-placeholders.handlePaste");
+const ORIGINAL_INSERT = Symbol.for("pi-slate.image-placeholders.insertTextAtCursor");
+const ORIGINAL_PASTE = Symbol.for("pi-slate.image-placeholders.handlePaste");
 
 type PatchableEditor = {
   insertTextAtCursor(text: string): void;

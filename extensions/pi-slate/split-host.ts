@@ -1,5 +1,5 @@
-export const ORIGINAL_SET_LAYOUT_ROOT = Symbol.for("pi-minimal-ui.setLayoutRoot");
-export const SPLIT_OWNER = Symbol.for("pi-minimal-ui.sidebar-split-owner");
+export const ORIGINAL_SET_LAYOUT_ROOT = Symbol.for("pi-slate.setLayoutRoot");
+export const SPLIT_OWNER = Symbol.for("pi-slate.sidebar-split-owner");
 
 export type SplitHost<T> = {
   layoutRoot?: T;

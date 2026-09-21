@@ -4,7 +4,7 @@ import {
   estimateAssistantTokens,
   TOKEN_RATE_WINDOW_MS,
   TokenRateTracker,
-} from "../extensions/pi-minimal-ui/token-rate.ts";
+} from "../extensions/pi-slate/token-rate.ts";
 
 test("estimates streamed text and thinking tokens without serializing tool arguments", () => {
   assert.equal(estimateAssistantTokens({}), 0);

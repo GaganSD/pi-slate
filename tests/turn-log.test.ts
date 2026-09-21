@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { eventTone, TurnLogView, wrapLines } from "../extensions/pi-minimal-ui/turn-log.ts";
-import type { TurnEvent } from "../extensions/pi-minimal-ui/turn-impact.ts";
+import { eventTone, TurnLogView, wrapLines } from "../extensions/pi-slate/turn-log.ts";
+import type { TurnEvent } from "../extensions/pi-slate/turn-impact.ts";
 
 function theme(): Theme {
   return {

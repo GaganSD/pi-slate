@@ -13,7 +13,7 @@ import {
 } from "./layout.ts";
 import { bindSplitHost } from "./split-host.ts";
 
-const SIDEBAR_SPLIT = Symbol.for("pi-minimal-ui.sidebar-split");
+const SIDEBAR_SPLIT = Symbol.for("pi-slate.sidebar-split");
 
 class SidebarGutter implements Component {
   private readonly pane: Component;

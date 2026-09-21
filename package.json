@@ -1,5 +1,5 @@
 {
-  "name": "pi-extensions",
+  "name": "pi-slate",
   "version": "0.1.0",
   "description": "Quiet Pi TUI: header, footer, sidebar, and a muted dark theme.",
   "type": "module",
@@ -10,9 +10,9 @@
     "pi-theme",
     "terminal-ui"
   ],
-  "repository": "github:GaganSD/pi-extensions",
-  "bugs": "https://github.com/GaganSD/pi-extensions/issues",
-  "homepage": "https://github.com/GaganSD/pi-extensions#readme",
+  "repository": "github:GaganSD/pi-slate",
+  "bugs": "https://github.com/GaganSD/pi-slate/issues",
+  "homepage": "https://github.com/GaganSD/pi-slate#readme",
   "files": [
     "extensions",
     "themes",
@@ -39,10 +39,10 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/pi-minimal-ui/index.ts"
+      "./extensions/pi-slate/index.ts"
     ],
     "themes": [
-      "./themes/pi-minimal.json"
+      "./themes/pi-slate.json"
     ]
   }
 }

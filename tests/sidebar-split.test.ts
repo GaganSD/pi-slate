@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bindSplitHost } from "../extensions/pi-minimal-ui/split-host.ts";
+import { bindSplitHost } from "../extensions/pi-slate/split-host.ts";
 
 type Node = { id: string; child?: Node };
 
