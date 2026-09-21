@@ -48,6 +48,7 @@ export default function sidebarExtension(pi: ExtensionAPI): void {
       const settings = saveSidebarConfig(next, sidebarConfigPath());
       loaded = { settings, stored: normalizeSidebarConfig(next) };
       sidebar.setSettings(settings);
+      if (settings.enabled) bind(ctx);
       requestRender(true);
       return settings;
     } catch (error) {
@@ -84,6 +85,14 @@ export default function sidebarExtension(pi: ExtensionAPI): void {
     syncSidebar(ctx);
   };
 
+  const bind = (ctx: ExtensionContext): void => {
+    if (ctx.mode !== "tui") return;
+    ctx.ui.setWidget("pi-extensions.sidebar", (tui, theme) => {
+      mount(ctx, tui, theme);
+      return new AttachHook();
+    });
+  };
+
   installTodoTool(pi, sidebar, () => requestRender());
   pi.events.on(MCP_STATUS_EVENT, (data) => {
     sidebar.setMcpConnected(parseMcpConnectedCount(data) ?? 0);
@@ -106,10 +115,7 @@ export default function sidebarExtension(pi: ExtensionAPI): void {
         );
       },
     });
-    ctx.ui.setWidget("pi-extensions.sidebar", (tui, theme) => {
-      mount(ctx, tui, theme);
-      return new AttachHook();
-    });
+    bind(ctx);
     requestRender(true);
   };
 
@@ -141,11 +147,12 @@ export default function sidebarExtension(pi: ExtensionAPI): void {
     syncSidebar(ctx);
     void files.refresh();
   });
-  pi.on("session_shutdown", () => {
+  pi.on("session_shutdown", (_event, ctx) => {
     tokenRate.dispose();
     images.dispose();
     files.dispose();
     sidebar.dispose();
+    if (ctx.mode === "tui") ctx.ui.setWidget("pi-extensions.sidebar", undefined);
     requestRender(true);
     requestRender = () => {};
   });

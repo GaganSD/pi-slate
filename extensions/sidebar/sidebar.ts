@@ -166,8 +166,11 @@ export class Sidebar implements Component {
   attach(tui: TUI, theme: Theme): SidebarAttachResult {
     this.tui = tui;
     this.theme = theme;
-    if (!this.settings.enabled) return "idle";
-    if (this.splitDispose || this.handle) return this.splitActive ? "split" : "overlay";
+    if (!this.settings.enabled) {
+      this.unmount();
+      return "idle";
+    }
+    if (this.splitDispose || this.handle) this.unmount();
     if (isViewportTUI(tui) && hasForeignSplitOwner(tui)) return "foreign";
 
     this.splitDispose = installSidebarSplit(tui, this, () => this.widthLayout());
