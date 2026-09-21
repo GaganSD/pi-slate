@@ -1,5 +1,5 @@
 export const TOKEN_RATE_WINDOW_MS = 5000;
-export const TOKEN_RATE_TICK_MS = 250;
+export const TOKEN_RATE_MIN_ELAPSED_MS = 250;
 
 export function displayedTokenRate(rate: number): number {
   return Number.isFinite(rate) ? Math.round(Math.max(0, rate)) : 0;
@@ -9,8 +9,6 @@ export type AssistantContentBlock = {
   type?: string;
   text?: string;
   thinking?: string;
-  name?: string;
-  arguments?: unknown;
 };
 
 type Sample = { t: number; tokens: number };
@@ -22,20 +20,8 @@ export function estimateAssistantTokens(message: { content?: readonly AssistantC
   for (const block of content) {
     if (block.type === "text") chars += block.text?.length ?? 0;
     else if (block.type === "thinking") chars += block.thinking?.length ?? 0;
-    else if (block.type === "toolCall") {
-      chars += block.name?.length ?? 0;
-      chars += stringifyArgs(block.arguments).length;
-    }
   }
   return chars / 4;
-}
-
-function stringifyArgs(value: unknown): string {
-  try {
-    return JSON.stringify(value ?? {}) ?? "";
-  } catch {
-    return "";
-  }
 }
 
 export class TokenRateTracker {
@@ -45,26 +31,15 @@ export class TokenRateTracker {
   private lastRate = 0;
   private activeNow = 0;
   private lastWall: number | null = null;
-  private timer: ReturnType<typeof setInterval> | undefined;
   private onChange?: () => void;
   private readonly now: () => number;
-  private readonly schedule: typeof setInterval;
-  private readonly unschedule: typeof clearInterval;
 
-  constructor(
-    now: () => number = Date.now,
-    schedule: typeof setInterval = setInterval,
-    unschedule: typeof clearInterval = clearInterval,
-  ) {
+  constructor(now: () => number = Date.now) {
     this.now = now;
-    this.schedule = schedule;
-    this.unschedule = unschedule;
   }
 
   setOnChange(callback: (() => void) | undefined): void {
     this.onChange = callback;
-    if (callback && this.streaming) this.ensureTimer();
-    else if (!callback) this.clearTimer();
   }
 
   startMessage(): void {
@@ -73,7 +48,6 @@ export class TokenRateTracker {
     this.activeNow = 0;
     this.streaming = true;
     this.lastWall = this.now();
-    this.ensureTimer();
   }
 
   observePartial(tokens: number): void {
@@ -85,7 +59,7 @@ export class TokenRateTracker {
     this.syncClock();
     this.samples.push({ t: this.activeNow, tokens: delta });
     this.prune();
-    this.lastRate = this.liveRate(TOKEN_RATE_TICK_MS);
+    this.lastRate = this.liveRate(TOKEN_RATE_MIN_ELAPSED_MS);
     this.onChange?.();
   }
 
@@ -98,7 +72,6 @@ export class TokenRateTracker {
     this.lastPartialTokens = 0;
     this.streaming = false;
     this.lastWall = null;
-    this.clearTimer();
     this.onChange?.();
   }
 
@@ -107,12 +80,11 @@ export class TokenRateTracker {
     this.syncClock();
     this.prune();
     if (this.samples.length === 0) return this.lastRate;
-    this.lastRate = this.liveRate(TOKEN_RATE_TICK_MS);
+    this.lastRate = this.liveRate(TOKEN_RATE_MIN_ELAPSED_MS);
     return this.lastRate;
   }
 
   dispose(): void {
-    this.clearTimer();
     this.samples = [];
     this.lastPartialTokens = 0;
     this.streaming = false;
@@ -148,21 +120,4 @@ export class TokenRateTracker {
     if (index > 0) this.samples = this.samples.slice(index);
   }
 
-  private ensureTimer(): void {
-    if (this.timer || !this.onChange || !this.streaming) return;
-    this.timer = this.schedule(() => {
-      if (!this.streaming) {
-        this.clearTimer();
-        return;
-      }
-      this.onChange?.();
-    }, TOKEN_RATE_TICK_MS);
-    this.timer.unref?.();
-  }
-
-  private clearTimer(): void {
-    if (!this.timer) return;
-    this.unschedule(this.timer);
-    this.timer = undefined;
-  }
 }

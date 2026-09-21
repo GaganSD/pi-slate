@@ -6,17 +6,17 @@ import {
   TokenRateTracker,
 } from "../extensions/pi-minimal-ui/token-rate.ts";
 
-test("estimates assistant tokens from streamed content", () => {
+test("estimates streamed text and thinking tokens without serializing tool arguments", () => {
   assert.equal(estimateAssistantTokens({}), 0);
   assert.equal(
     estimateAssistantTokens({
       content: [
         { type: "thinking", thinking: "abcd" },
         { type: "text", text: "efghijkl" },
-        { type: "toolCall", name: "bash", arguments: { command: "ls" } },
+        { type: "toolCall" },
       ],
     }),
-    ("abcd".length + "efghijkl".length + "bash".length + JSON.stringify({ command: "ls" }).length) / 4,
+    ("abcd".length + "efghijkl".length) / 4,
   );
 });
 

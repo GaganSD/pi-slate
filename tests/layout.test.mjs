@@ -5,22 +5,15 @@ import {
   PI_LOGO_ASCII,
   centerOffset,
   compactPath,
-  contextLabel,
   footerVisibility,
   countSkillCommands,
-  formatCompactContext,
   formatContextResources,
-  formatContextSummary,
   formatContextTokens,
-  formatContextUsed,
-  formatCount,
   formatInteger,
   formatMcpConnected,
   formatPercent,
   formatSkillsLoaded,
-  formatSpend,
   formatTokenCount,
-  formatTokenCountWithRate,
   formatTokenRate,
   parseMcpConnectedCount,
   mainColumnWidth,
@@ -72,25 +65,14 @@ test("sidebar context labels match the OpenCode-style facts", () => {
   assert.equal(formatTokenCount(null), "— tokens");
   assert.equal(formatTokenRate(42.4), "42 tokens/sec");
   assert.equal(formatTokenRate(null), "— tokens/sec");
-  assert.equal(formatTokenCountWithRate(3485, 42.4), "3,485 tokens · 42 tokens/sec");
   assert.equal(formatPercent(2.4), "2%");
   assert.equal(formatPercent(null), "—%");
   assert.equal(formatContextTokens(3485, 2.4, 42.4), "3,485 tokens (2%) · 42 tokens/sec");
   assert.equal(formatContextTokens(null, null, null), "— tokens (—%) · — tokens/sec");
-  assert.equal(formatContextUsed(2.4), "2% used");
-  assert.equal(formatContextUsed(null), "— used");
-  assert.equal(formatSpend(0), "$0.00 spent");
-  assert.equal(formatSpend(1.234), "$1.23 spent");
-  assert.equal(formatContextSummary(2405, 0, 0.02), "2,405 tokens · 0% used · $0.02 spent");
-  assert.equal(formatCompactContext(2405, 0, 0.02, 42), "2,405 · 42/s · 0% · $0.02");
 });
 
-test("labels stay compact and safe with missing data", () => {
-  assert.equal(formatCount(500_000), "500k");
-  assert.equal(formatCount(1_250_000), "1.25m");
+test("model label stays safe with missing data", () => {
   assert.equal(modelLabel(undefined), "no model");
-  assert.equal(contextLabel(undefined), "context —");
-  assert.equal(contextLabel({ percent: 2.64, contextWindow: 500_000 }), "2.6%/500k");
 });
 
 test("workspace column is 20% once the terminal is wide enough", () => {

@@ -23,7 +23,6 @@ import { GitStatusPoller } from "./git-status.ts";
 import { Sidebar } from "./sidebar.ts";
 import { estimateAssistantTokens, TokenRateTracker } from "./token-rate.ts";
 import { installTodoTool } from "./todo.ts";
-import { installUpdateCheck } from "./update-check.ts";
 import { createWordPicker } from "./working-words.ts";
 import {
   MCP_STATUS_EVENT,
@@ -197,7 +196,6 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
   };
 
   installTodoTool(pi, sidebar, () => requestRender());
-  installUpdateCheck(pi);
   pi.events.on(MCP_STATUS_EVENT, (data) => {
     sidebar.setMcpConnected(parseMcpConnectedCount(data));
   });

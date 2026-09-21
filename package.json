@@ -1,16 +1,19 @@
 {
   "name": "pi-extensions",
   "version": "0.1.0",
-  "description": "Pi extensions: pi-minimal-ui (header, footer, sidebar, theme).",
+  "description": "A quiet, minimal Pi terminal UI: header, footer, sidebar, and theme.",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "pi-package",
     "pi-extension",
-    "pi-theme"
+    "pi-theme",
+    "terminal-ui"
   ],
+  "repository": "github:GaganSD/pi-extensions",
+  "bugs": "https://github.com/GaganSD/pi-extensions/issues",
+  "homepage": "https://github.com/GaganSD/pi-extensions#readme",
   "files": [
-    "assets",
     "extensions",
     "themes",
     "README.md",
@@ -18,6 +21,7 @@
   ],
   "scripts": {
     "test": "node --test --experimental-strip-types tests/**/*.test.ts tests/**/*.test.mjs",
+    "typecheck": "tsc --noEmit",
     "pack:check": "npm pack --dry-run"
   },
   "peerDependencies": {

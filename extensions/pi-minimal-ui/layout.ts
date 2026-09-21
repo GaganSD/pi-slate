@@ -5,17 +5,6 @@
 export const PI_LOGO = ["██████  ", "██  ██  ", "████  ██", "██    ██"];
 export const PI_LOGO_ASCII = ["######  ", "##  ##  ", "####  ##", "##    ##"];
 
-export function formatCount(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  if (value >= 1_000_000) return `${trimFixed(value / 1_000_000)}m`;
-  if (value >= 1_000) return `${trimFixed(value / 1_000)}k`;
-  return String(Math.round(value));
-}
-
-function trimFixed(value: number): string {
-  return value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2).replace(/\.0+$|(?<=\.[0-9])0$/, "");
-}
-
 export function compactPath(cwd: string | undefined, home?: string): string {
   if (!cwd) return "";
   if (home && (cwd === home || cwd.startsWith(`${home}/`))) {
@@ -44,13 +33,6 @@ export function formatTokenRate(rate: number | null | undefined): string {
   return `${formatInteger(Math.max(0, rate))} tokens/sec`;
 }
 
-export function formatTokenCountWithRate(
-  tokens: number | null | undefined,
-  rate: number | null | undefined,
-): string {
-  return `${formatTokenCount(tokens)} · ${formatTokenRate(rate)}`;
-}
-
 export function formatPercent(percent: number | null | undefined): string {
   if (percent === null || percent === undefined || !Number.isFinite(percent)) return "—%";
   return `${Math.round(percent)}%`;
@@ -62,38 +44,6 @@ export function formatContextTokens(
   rate: number | null | undefined,
 ): string {
   return `${formatTokenCount(tokens)} (${formatPercent(percent)}) · ${formatTokenRate(rate)}`;
-}
-
-export function formatContextUsed(percent: number | null | undefined): string {
-  if (percent === null || percent === undefined || !Number.isFinite(percent)) return "— used";
-  return `${Math.round(percent)}% used`;
-}
-
-export function formatSpend(cost: number | null | undefined): string {
-  if (cost === null || cost === undefined || !Number.isFinite(cost)) return "$0.00 spent";
-  return `$${Math.max(0, cost).toFixed(2)} spent`;
-}
-
-export function formatContextSummary(
-  tokens: number | null | undefined,
-  percent: number | null | undefined,
-  spend: number | null | undefined,
-): string {
-  return [formatTokenCount(tokens), formatContextUsed(percent), formatSpend(spend)].join(" · ");
-}
-
-export function formatCompactContext(
-  tokens: number | null | undefined,
-  percent: number | null | undefined,
-  spend: number | null | undefined,
-  rate: number | null | undefined = 0,
-): string {
-  return [
-    formatTokenCount(tokens).replace(" tokens", ""),
-    formatTokenRate(rate).replace(" tokens/sec", "/s"),
-    formatContextUsed(percent).replace(" used", ""),
-    formatSpend(spend).replace(" spent", ""),
-  ].join(" · ");
 }
 
 export const MCP_STATUS_EVENT = "pi-mcp-adapter/status/v1";
@@ -126,12 +76,6 @@ export function parseMcpConnectedCount(data: unknown): number | null {
   const count = (data as { connectedCount?: unknown }).connectedCount;
   if (typeof count !== "number" || !Number.isFinite(count)) return null;
   return Math.max(0, Math.round(count));
-}
-
-export function contextLabel(usage: { percent: number | null; contextWindow: number } | undefined): string {
-  if (!usage) return "context —";
-  const percent = usage.percent === null ? "—" : `${usage.percent.toFixed(1)}%`;
-  return `${percent}/${formatCount(usage.contextWindow)}`;
 }
 
 export function footerVisibility(width: number): {

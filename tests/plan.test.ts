@@ -16,7 +16,7 @@ import {
 } from "../extensions/pi-minimal-ui/plan.ts";
 
 function must(result: PlanMutation): PlanState {
-  assert.equal(result.error, undefined, result.error);
+  assert.equal(result.error, undefined, result.error ?? "");
   return result.state;
 }
 

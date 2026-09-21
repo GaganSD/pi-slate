@@ -106,7 +106,7 @@ test("poller publishes changes and ignores duplicate snapshots", async () => {
   const seen: string[][] = [];
   const poller = new GitStatusPoller((files) => {
     seen.push(files.map((item) => item.path));
-  }, async () => output, 60_000);
+  }, async () => output);
   poller.start("/repo");
   await poller.refresh();
   assert.deepEqual(seen, [["a.ts"]]);
@@ -121,22 +121,23 @@ test("poller publishes changes and ignores duplicate snapshots", async () => {
   poller.dispose();
 });
 
-test("poller ignores a snapshot that resolves after the working directory changes", async () => {
-  let resolveOld!: (output: string) => void;
-  const oldSnapshot = new Promise<string>((resolve) => {
-    resolveOld = resolve;
+test("poller coalesces overlapping refreshes into one trailing refresh", async () => {
+  let resolveFirst!: (output: string) => void;
+  let runs = 0;
+  const firstOutput = new Promise<string>((resolve) => {
+    resolveFirst = resolve;
   });
-  const seen: string[][] = [];
-  const poller = new GitStatusPoller((files) => {
-    seen.push(files.map((item) => item.path));
-  }, async (cwd) => cwd === "/old-repo" ? oldSnapshot : " M new.ts\0", 60_000);
-
-  poller.start("/old-repo");
-  poller.setCwd("/new-repo");
-  resolveOld(" M old.ts\0");
-  await poller.refresh();
-
-  assert.deepEqual(seen, [["new.ts"]]);
+  const poller = new GitStatusPoller(() => {}, async () => {
+    runs += 1;
+    return runs === 1 ? firstOutput : " M fresh.ts\0";
+  });
+  poller.start("/repo");
+  const first = poller.refresh();
+  const second = poller.refresh();
+  assert.equal(runs, 1);
+  resolveFirst(" M stale.ts\0");
+  await Promise.all([first, second]);
+  assert.equal(runs, 2);
   poller.dispose();
 });
 
@@ -148,7 +149,7 @@ test("poller keeps the last snapshot when git times out", async () => {
   }, async () => {
     if (shouldFail) throw new Error("killed");
     return " M a.ts\0";
-  }, 60_000);
+  });
   poller.start("/repo");
   await poller.refresh();
   shouldFail = true;

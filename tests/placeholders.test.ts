@@ -4,7 +4,6 @@ import {
   displayImagePlaceholders,
   formatImageLocation,
   imageTokenAtCursor,
-  isClipboardImagePath,
   mimeTypeForImagePath,
   nextImageNumber,
   rewriteInsertedText,
@@ -20,13 +19,6 @@ const PATH_2 =
 function fakeImage(filePath: string): ImageAttachment {
   return { type: "image", data: `data:${filePath}`, mimeType: mimeTypeForImagePath(filePath) };
 }
-
-test("detects clipboard image temp paths", () => {
-  assert.equal(isClipboardImagePath(PATH), true);
-  assert.equal(isClipboardImagePath(`"${PATH}"`), true);
-  assert.equal(isClipboardImagePath("screenshot.png"), false);
-  assert.equal(isClipboardImagePath("/tmp/photo.png"), false);
-});
 
 test("numbers placeholders from existing editor text", () => {
   assert.equal(nextImageNumber(""), 1);

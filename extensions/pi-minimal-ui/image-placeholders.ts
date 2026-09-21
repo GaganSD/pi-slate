@@ -15,15 +15,15 @@ import type { Sidebar } from "./sidebar.ts";
 const ORIGINAL_INSERT = Symbol.for("pi-minimal-ui.image-placeholders.insertTextAtCursor");
 const ORIGINAL_PASTE = Symbol.for("pi-minimal-ui.image-placeholders.handlePaste");
 
-type PatchableEditor = Editor & {
+type PatchableEditor = {
+  insertTextAtCursor(text: string): void;
   handlePaste(text: string): void;
-  [ORIGINAL_INSERT]?: Editor["insertTextAtCursor"];
+  [ORIGINAL_INSERT]?: (text: string) => void;
   [ORIGINAL_PASTE]?: (text: string) => void;
 };
 
 export type ImagePlaceholders = {
   attachEditor(editor: CustomEditor): void;
-  hidePeek(): void;
   dispose(): void;
 };
 
@@ -37,7 +37,7 @@ function loadImage(filePath: string): ImageAttachment | undefined {
 }
 
 function installEditorPatch(store: ImagePathStore, onInserted: () => void): () => void {
-  const proto = Editor.prototype as PatchableEditor;
+  const proto = Editor.prototype as unknown as PatchableEditor;
   proto[ORIGINAL_INSERT] ??= proto.insertTextAtCursor;
   proto[ORIGINAL_PASTE] ??= proto.handlePaste;
   const originalInsert = proto[ORIGINAL_INSERT];
@@ -92,9 +92,6 @@ export function installImagePlaceholders(pi: ExtensionAPI, workspace: Sidebar): 
     attachEditor(editor) {
       peek?.dispose();
       peek = new ImagePeek(store, editor, workspace, loadImage);
-    },
-    hidePeek() {
-      peek?.hide();
     },
     dispose() {
       peek?.dispose();

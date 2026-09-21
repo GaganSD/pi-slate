@@ -39,6 +39,10 @@ class SidebarGutter implements Component {
 }
 
 class SidebarSplit extends HStack {
+  chat(): Component {
+    return this.entries[0]?.component ?? this.children[0]!;
+  }
+
   constructor(chat: Component, pane: Component) {
     const gutter = new SidebarGutter(pane);
     super([
@@ -69,7 +73,7 @@ function isSplit(component: Component | undefined): component is SidebarSplit {
 export function splitChat(component: Component | undefined): Component | undefined {
   if (!component) return undefined;
   if (!isSplit(component)) return component;
-  return component.entries[0]?.component ?? component.children[0];
+  return component.chat();
 }
 
 export function installSidebarSplit(tui: TUI, pane: Component): (() => void) | undefined {

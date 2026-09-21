@@ -15,13 +15,6 @@ function imageToken(number: number | string): string {
   return `[image-${number}]`;
 }
 
-export function isClipboardImagePath(text: string): boolean {
-  const trimmed = text.trim();
-  CLIPBOARD_PATH_RE.lastIndex = 0;
-  const match = CLIPBOARD_PATH_RE.exec(trimmed);
-  return match?.[0] === trimmed || match?.[1] === trimmed;
-}
-
 export function nextImageNumber(text: string): number {
   let max = 0;
   for (const match of text.matchAll(/\[image[ -](\d+)\]/g)) {
