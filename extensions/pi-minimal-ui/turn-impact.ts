@@ -1,4 +1,4 @@
-export type TurnFilter = "read" | "tool" | "shell" | "subagent";
+export type TurnFilter = "tool" | "shell" | "subagent";
 
 export type TurnEvent = {
   id: string;
@@ -23,7 +23,7 @@ type PendingCall = {
   input?: Record<string, unknown>;
 };
 
-const FILTERS: TurnFilter[] = ["read", "tool", "shell", "subagent"];
+const FILTERS: TurnFilter[] = ["tool", "shell", "subagent"];
 
 /** Transient, UI-local facts observed during the current user prompt. */
 export class TurnImpactTracker {
@@ -115,7 +115,6 @@ export function isShellTool(toolName: string): boolean {
 
 export function eventsForFilter(events: readonly TurnEvent[], filter: TurnFilter): TurnEvent[] {
   if (filter === "tool") return [...events];
-  if (filter === "read") return events.filter((event) => event.toolName === "read");
   if (filter === "shell") return events.filter((event) => isShellTool(event.toolName));
   return events.filter((event) => event.toolName === "subagent");
 }
@@ -176,7 +175,6 @@ export function formatDetail(
 }
 
 export function filterLabel(filter: TurnFilter): string {
-  if (filter === "read") return "files read";
   if (filter === "tool") return "tools called";
   if (filter === "shell") return "shell commands";
   return "subagents spawned";
@@ -188,7 +186,6 @@ function plural(count: number, singular: string, many = `${singular}s`): string 
 
 export function formatTurnImpact(snapshot: TurnImpactSnapshot): string[] {
   return [
-    plural(snapshot.filesRead, "file") + " read",
     plural(snapshot.toolsCalled, "tool") + " called",
     plural(snapshot.shellCommands, "shell command"),
     plural(snapshot.subagentsSpawned, "subagent") + " spawned",

@@ -131,7 +131,7 @@ test("sidebar content uses a compact summary and retains Preview", () => {
     assert.ok(slots.peekHeight >= 1);
   }
   assert.deepEqual(splitSidebarContent(20, 5), {
-    summaryHeight: 13, filesHeight: 5, dividerHeight: 1, peekHeight: 6,
+    summaryHeight: 12, filesHeight: 5, dividerHeight: 1, peekHeight: 7,
   });
   assert.deepEqual(splitSidebarContent(6, 5), {
     summaryHeight: 4, filesHeight: 1, dividerHeight: 1, peekHeight: 1,
@@ -141,12 +141,11 @@ test("sidebar content uses a compact summary and retains Preview", () => {
   });
 });
 
-test("workspace pane always reserves caption rows", () => {
+test("workspace pane gives the image the full preview body", () => {
   assert.deepEqual(workspacePaneSlots(0), { imageHeight: 0, captionHeight: 0 });
-  assert.deepEqual(workspacePaneSlots(1), { imageHeight: 0, captionHeight: 1 });
-  assert.deepEqual(workspacePaneSlots(3), { imageHeight: 2, captionHeight: 1 });
-  assert.deepEqual(workspacePaneSlots(4), { imageHeight: 3, captionHeight: 1 });
-  assert.deepEqual(workspacePaneSlots(20), { imageHeight: 19, captionHeight: 1 });
+  assert.deepEqual(workspacePaneSlots(1), { imageHeight: 1, captionHeight: 0 });
+  assert.deepEqual(workspacePaneSlots(3), { imageHeight: 3, captionHeight: 0 });
+  assert.deepEqual(workspacePaneSlots(20), { imageHeight: 20, captionHeight: 0 });
 });
 
 test("images contain-fit and never upscale", () => {
@@ -156,22 +155,14 @@ test("images contain-fit and never upscale", () => {
   assert.deepEqual(fitImageCells(800, 600, 0, 20), { columns: 0, rows: 0 });
 });
 
-test("image and caption sit on the bottom of the workspace pane", () => {
-  const placed = placeWorkspaceImage(8, 2, ["meta", "name", "dir"]);
+test("images sit at the top of the workspace pane", () => {
+  const placed = placeWorkspaceImage(8, 2, []);
   assert.equal(placed.lines.length, 8);
-  assert.equal(placed.imageStart, 3);
-  assert.equal(placed.imageRows, 2);
-  assert.equal(placed.captionStart, 5);
-  assert.deepEqual(placed.lines.slice(5), ["meta", "name", "dir"]);
-  assert.equal(placed.lines[0], "");
-  assert.equal(placed.lines[2], "");
-});
-
-test("a full-height image still keeps the caption underneath", () => {
-  const placed = placeWorkspaceImage(8, 20, ["meta", "name", "dir"]);
   assert.equal(placed.imageStart, 0);
-  assert.equal(placed.imageRows, 5);
-  assert.deepEqual(placed.lines.slice(5), ["meta", "name", "dir"]);
+  assert.equal(placed.imageRows, 2);
+  assert.equal(placed.captionStart, 2);
+  assert.equal(placed.lines[0], "");
+  assert.equal(placed.lines[7], "");
 });
 
 test("home paths use a tilde without rewriting lookalikes", () => {

@@ -53,7 +53,6 @@ export class ImagePeek {
         image,
         this.workspace.requireTheme(),
         homedir(),
-        (path) => this.workspace.copyPath(path),
       ),
     );
     this.shownId = nextId;

@@ -1,4 +1,3 @@
-export const WORKSPACE_CAPTION_LINES = 1;
 export const SIDEBAR_DOCK_LINES = 4;
 export const FILES_WIDGET_MAX_LINES = 5;
 
@@ -39,7 +38,7 @@ export function splitSidebarContent(
   const filesWant = Math.max(0, Math.min(FILES_WIDGET_MAX_LINES, Math.floor(filesDesired)));
   // Keep Preview usable first; Summary expands only into the space it needs.
   if (slotHeight <= 2) return { summaryHeight: 0, filesHeight: 0, dividerHeight: 0, peekHeight: slotHeight };
-  const summaryWant = Math.min(14, 2 + filesWant + 4 + 2); // headings, files, four facts, two section gaps.
+  const summaryWant = Math.min(13, 2 + filesWant + 3 + 2); // headings, files, three facts, two section gaps.
   const summaryHeight = Math.min(summaryWant, slotHeight - 2);
   const dividerHeight = summaryHeight > 0 ? 1 : 0;
   const peekHeight = slotHeight - summaryHeight - dividerHeight;
@@ -52,10 +51,7 @@ export function workspacePaneSlots(height: number): {
   captionHeight: number;
 } {
   const paneHeight = Math.max(0, Math.floor(height));
-  if (paneHeight === 0) return { imageHeight: 0, captionHeight: 0 };
-  if (paneHeight === 1) return { imageHeight: 0, captionHeight: 1 };
-  const captionHeight = Math.min(WORKSPACE_CAPTION_LINES, paneHeight - 1);
-  return { imageHeight: paneHeight - captionHeight, captionHeight };
+  return { imageHeight: paneHeight, captionHeight: 0 };
 }
 
 export function fitImageCells(
@@ -88,8 +84,8 @@ export function placeWorkspaceImage(
   const pane = Math.max(0, Math.floor(paneHeight));
   const captions = captionLines.slice(0, pane);
   const usedImageRows = Math.min(Math.max(0, imageRows), Math.max(0, pane - captions.length));
-  const imageStart = pane - usedImageRows - captions.length;
-  const captionStart = imageStart + usedImageRows;
+  const imageStart = 0;
+  const captionStart = usedImageRows;
   const lines = Array.from({ length: pane }, () => "");
   for (let i = 0; i < captions.length; i++) {
     lines[captionStart + i] = captions[i] ?? "";

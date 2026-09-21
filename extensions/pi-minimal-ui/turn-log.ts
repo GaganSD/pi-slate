@@ -3,6 +3,7 @@ import { truncateToWidth } from "@earendil-works/pi-tui";
 import {
   eventsForFilter,
   filterLabel,
+  isShellTool,
   type TurnEvent,
   type TurnFilter,
 } from "./turn-impact.ts";
@@ -79,7 +80,7 @@ export class TurnLogView implements WorkspaceView {
     }
     for (const event of items) {
       const mark = this.expanded.has(event.id) ? "▾" : "▸";
-      const tone = event.isError ? "error" : event.pending ? "warning" : "muted";
+      const tone = eventTone(event);
       rows.push({
         event,
         text: truncateToWidth(this.theme.fg(tone, `${mark} ${event.title}`), width, "…"),
@@ -91,6 +92,16 @@ export class TurnLogView implements WorkspaceView {
     }
     return rows;
   }
+}
+
+export function eventTone(event: TurnEvent): "error" | "warning" | "accent" | "success" | "muted" {
+  if (event.isError) return "error";
+  if (event.pending) return "warning";
+  if (event.toolName === "read") return "accent";
+  if (event.toolName === "edit" || event.toolName === "write") return "warning";
+  if (event.toolName === "subagent") return "success";
+  if (isShellTool(event.toolName)) return "muted";
+  return "muted";
 }
 
 export function wrapLines(text: string, width: number): string[] {

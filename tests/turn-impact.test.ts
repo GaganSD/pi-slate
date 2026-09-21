@@ -50,7 +50,7 @@ test("reset clears the current turn and keeps moving the revision", () => {
   assert.ok(afterReset.revision > 0);
 });
 
-test("formatTurnImpact prints the four last-turn facts", () => {
+test("formatTurnImpact prints the last-turn facts", () => {
   assert.deepEqual(formatTurnImpact({
     revision: 1,
     filesRead: 0,
@@ -59,7 +59,6 @@ test("formatTurnImpact prints the four last-turn facts", () => {
     subagentsSpawned: 0,
     events: [],
   }), [
-    "0 files read",
     "0 tools called",
     "0 shell commands",
     "0 subagents spawned",
@@ -72,7 +71,6 @@ test("formatTurnImpact prints the four last-turn facts", () => {
     subagentsSpawned: 2,
     events: [],
   }), [
-    "1 file read",
     "6 tools called",
     "5 shell commands",
     "2 subagents spawned",
@@ -86,7 +84,6 @@ test("eventsForFilter slices the unified log", () => {
     { id: "3", toolName: "subagent", title: "reviewer", detail: "", isError: false, pending: false },
   ];
   assert.equal(eventsForFilter(events, "tool").length, 3);
-  assert.deepEqual(eventsForFilter(events, "read").map((event) => event.id), ["1"]);
   assert.deepEqual(eventsForFilter(events, "shell").map((event) => event.id), ["2"]);
   assert.deepEqual(eventsForFilter(events, "subagent").map((event) => event.id), ["3"]);
 });

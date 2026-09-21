@@ -134,10 +134,9 @@ test("summary leaves blank lines between its sections", () => {
   assert.equal(labels[summary + 1], "");
   assert.ok(lastTurn > files);
   assert.equal(labels[lastTurn - 1], "");
-  assert.equal(labels[lastTurn + 1], "1 file read");
-  assert.equal(labels[lastTurn + 2], "6 tools called");
-  assert.equal(labels[lastTurn + 3], "5 shell commands");
-  assert.equal(labels[lastTurn + 4], "0 subagents spawned");
+  assert.equal(labels[lastTurn + 1], "6 tools called");
+  assert.equal(labels[lastTurn + 2], "5 shell commands");
+  assert.equal(labels[lastTurn + 3], "0 subagents spawned");
 });
 
 test("context dock keeps the heading, rule, and spend", () => {
@@ -169,9 +168,9 @@ test("clicking a last-turn fact opens that list in Preview", () => {
   assert.equal(sidebar.handleMouse(mouse({ type: "move", y: lastTurn + 1 })), undefined);
   assert.equal(sidebar.currentViewId(), undefined);
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 1 })), { handled: true, render: true });
-  assert.equal(sidebar.currentViewId(), "turn:read");
+  assert.equal(sidebar.currentViewId(), "turn:tool");
   const preview = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
-  assert.ok(preview.includes("Preview · files read"));
-  assert.ok(preview.includes("> 1 file read"));
+  assert.ok(preview.includes("Preview · tools called"));
+  assert.ok(preview.includes("> 1 tool called"));
   assert.ok(preview.some((line) => /▸ read a.ts/.test(line)));
 });

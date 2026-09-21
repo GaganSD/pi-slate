@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { TurnLogView, wrapLines } from "../extensions/pi-minimal-ui/turn-log.ts";
+import { eventTone, TurnLogView, wrapLines } from "../extensions/pi-minimal-ui/turn-log.ts";
 import type { TurnEvent } from "../extensions/pi-minimal-ui/turn-impact.ts";
 
 function theme(): Theme {
@@ -14,6 +14,16 @@ function theme(): Theme {
 function event(id: string, toolName: string, title = toolName): TurnEvent {
   return { id, toolName, title, detail: `full ${id}\nmore`, isError: false, pending: false };
 }
+
+test("eventTone marks read, edit, and subagent rows", () => {
+  const base = { id: "1", title: "x", detail: "", isError: false, pending: false };
+  assert.equal(eventTone({ ...base, toolName: "read" }), "accent");
+  assert.equal(eventTone({ ...base, toolName: "edit" }), "warning");
+  assert.equal(eventTone({ ...base, toolName: "write" }), "warning");
+  assert.equal(eventTone({ ...base, toolName: "subagent" }), "success");
+  assert.equal(eventTone({ ...base, toolName: "bash" }), "muted");
+  assert.equal(eventTone({ ...base, toolName: "read", isError: true }), "error");
+});
 
 test("wrapLines splits on width and keeps blank lines", () => {
   assert.deepEqual(wrapLines("abcdef", 3), ["abc", "def"]);
