@@ -23,8 +23,7 @@ Project-local: `pi install -l git:github.com/GaganSD/pi-slate`.
 ## Use
 
 - **Sidebar** — Summary (Files Changed, Last Turn), Preview, Context. Drag the left `│` to resize; width is saved in `~/.pi/agent/pi-slate.json`.
-- `/sidebar-width` — `default`, `narrow`, `medium`, `wide`, or a column count.
-- `/slate` — comfortable/compact editor, standard/minimal footer.
+- `/slate` — density, footer, and sidebar width. No args opens a picker; `/slate density compact`, `/slate footer minimal`, `/slate width 40` set a value.
 - Click a changed file or Last Turn count to open Preview. Click a Last Turn row again for the full tool message.
 - Put the cursor on an `[image-N]` token to peek it. Image terminals render the file; others get text.
 

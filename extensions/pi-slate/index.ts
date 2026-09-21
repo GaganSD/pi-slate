@@ -40,7 +40,9 @@ import {
   modelLabel,
   parseMcpConnectedCount,
   parseSidebarWidth,
-  parseSidebarWidthArg,
+  parseSlateArgs,
+  slateArgumentCompletions,
+  SLATE_USAGE,
   SIDEBAR_WIDTH_MEDIUM,
   SIDEBAR_WIDTH_NARROW,
   SIDEBAR_WIDTH_WIDE,
@@ -391,75 +393,91 @@ export default function piSlate(pi: ExtensionAPI): void {
     requestRender = () => {};
   });
 
-  pi.registerCommand("sidebar-width", {
-    description: "Set the sidebar width, or reset to the default 20%",
-    handler: async (args, ctx) => {
-      let width: number | undefined;
-      if (args.trim()) {
-        const parsed = parseSidebarWidthArg(args);
-        if (!parsed.ok) {
-          ctx.ui.notify("Usage: /sidebar-width [default|narrow|medium|wide|<columns>]", "error");
-          return;
-        }
-        width = parsed.width;
-      } else {
-        const choice = await ctx.ui.select("Sidebar width", [
-          "Default (20%)",
-          `Narrow (${SIDEBAR_WIDTH_NARROW})`,
-          `Medium (${SIDEBAR_WIDTH_MEDIUM})`,
-          `Wide (${SIDEBAR_WIDTH_WIDE})`,
-        ]);
-        if (!choice) return;
-        if (choice.startsWith("Default")) width = undefined;
-        else if (choice.startsWith("Narrow")) width = SIDEBAR_WIDTH_NARROW;
-        else if (choice.startsWith("Medium")) width = SIDEBAR_WIDTH_MEDIUM;
-        else width = SIDEBAR_WIDTH_WIDE;
-      }
+  const apply = (next: SlateConfig, message: string, ctx: ExtensionContext): void => {
+    try {
+      saveConfig(next);
+      config = next;
+      sidebar.setPreferredWidth(config.sidebarWidth);
+      activeEditor?.setPaddingX(config.density === "compact" ? 0 : 1);
+      requestRender();
+      ctx.ui.notify(message, "info");
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`Could not save Slate settings: ${messageText}`, "error");
+    }
+  };
 
-      try {
-        const next = withSidebarWidth(config, width);
-        saveConfig(next);
-        config = next;
-        sidebar.setPreferredWidth(width);
-        requestRender();
-        ctx.ui.notify(
-          width === undefined ? "Sidebar width reset to default" : `Sidebar width set to ${width}`,
-          "info",
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Could not save sidebar width: ${message}`, "error");
-      }
-    },
-  });
+  const pickDensity = async (ctx: ExtensionContext): Promise<SlateConfig["density"] | undefined> => {
+    const value = await ctx.ui.select("Density", ["Comfortable", "Compact"]);
+    return value ? value.toLowerCase() as SlateConfig["density"] : undefined;
+  };
+
+  const pickFooter = async (ctx: ExtensionContext): Promise<SlateConfig["footer"] | undefined> => {
+    const value = await ctx.ui.select("Footer", ["Standard", "Minimal"]);
+    return value ? value.toLowerCase() as SlateConfig["footer"] : undefined;
+  };
+
+  const pickWidth = async (ctx: ExtensionContext): Promise<{ picked: true; width?: number } | undefined> => {
+    const choice = await ctx.ui.select("Sidebar width", [
+      "Default (20%)",
+      `Narrow (${SIDEBAR_WIDTH_NARROW})`,
+      `Medium (${SIDEBAR_WIDTH_MEDIUM})`,
+      `Wide (${SIDEBAR_WIDTH_WIDE})`,
+    ]);
+    if (!choice) return undefined;
+    if (choice.startsWith("Default")) return { picked: true };
+    if (choice.startsWith("Narrow")) return { picked: true, width: SIDEBAR_WIDTH_NARROW };
+    if (choice.startsWith("Medium")) return { picked: true, width: SIDEBAR_WIDTH_MEDIUM };
+    return { picked: true, width: SIDEBAR_WIDTH_WIDE };
+  };
 
   pi.registerCommand("slate", {
-    description: "Configure the pi-slate appearance",
-    handler: async (_args, ctx) => {
-      const setting = await ctx.ui.select("Slate", ["Density", "Footer"]);
-      if (!setting) return;
-      let nextConfig = { ...config };
-
-      if (setting === "Density") {
-        const value = await ctx.ui.select("Density", ["Comfortable", "Compact"]);
-        if (!value) return;
-        nextConfig = { ...nextConfig, density: value.toLowerCase() as SlateConfig["density"] };
-      } else {
-        const value = await ctx.ui.select("Footer", ["Standard", "Minimal"]);
-        if (!value) return;
-        nextConfig = { ...nextConfig, footer: value.toLowerCase() as SlateConfig["footer"] };
+    description: "Configure pi-slate",
+    getArgumentCompletions: slateArgumentCompletions,
+    handler: async (args, ctx) => {
+      const parsed = parseSlateArgs(args);
+      if (!parsed.ok) {
+        ctx.ui.notify(SLATE_USAGE, "error");
+        return;
       }
 
-      try {
-        saveConfig(nextConfig);
-        config = nextConfig;
-        activeEditor?.setPaddingX(config.density === "compact" ? 0 : 1);
-        requestRender();
-        ctx.ui.notify("Slate updated", "info");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Could not save Slate settings: ${message}`, "error");
+      let kind = parsed.kind;
+      if (kind === "menu") {
+        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Width"]);
+        if (!setting) return;
+        kind = setting === "Density" ? "density" : setting === "Footer" ? "footer" : "width-menu";
       }
+
+      if (kind === "density") {
+        const density = (parsed.kind === "density" ? parsed.value : undefined) ?? await pickDensity(ctx);
+        if (!density) return;
+        apply({ ...config, density }, `Density set to ${density}`, ctx);
+        return;
+      }
+
+      if (kind === "footer") {
+        const footer = (parsed.kind === "footer" ? parsed.value : undefined) ?? await pickFooter(ctx);
+        if (!footer) return;
+        apply({ ...config, footer }, `Footer set to ${footer}`, ctx);
+        return;
+      }
+
+      if (parsed.kind === "width") {
+        apply(
+          withSidebarWidth(config, parsed.width),
+          parsed.width === undefined ? "Sidebar width reset to default" : `Sidebar width set to ${parsed.width}`,
+          ctx,
+        );
+        return;
+      }
+
+      const picked = await pickWidth(ctx);
+      if (!picked) return;
+      apply(
+        withSidebarWidth(config, picked.width),
+        picked.width === undefined ? "Sidebar width reset to default" : `Sidebar width set to ${picked.width}`,
+        ctx,
+      );
     },
   });
 }

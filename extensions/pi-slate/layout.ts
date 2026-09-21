@@ -146,6 +146,63 @@ export function parseSidebarWidthArg(raw: string): { ok: true; width?: number } 
   return { ok: true, width: columns };
 }
 
+export const SLATE_USAGE = "Usage: /slate [density|footer|width] [value]";
+
+const SLATE_COMPLETIONS = [
+  "density",
+  "density comfortable",
+  "density compact",
+  "footer",
+  "footer standard",
+  "footer minimal",
+  "width",
+  "width default",
+  "width narrow",
+  "width medium",
+  "width wide",
+];
+
+export type SlateArgs =
+  | { ok: true; kind: "menu" }
+  | { ok: true; kind: "density"; value?: "comfortable" | "compact" }
+  | { ok: true; kind: "footer"; value?: "standard" | "minimal" }
+  | { ok: true; kind: "width-menu" }
+  | { ok: true; kind: "width"; width?: number }
+  | { ok: false };
+
+export function parseSlateArgs(raw: string): SlateArgs {
+  const words = raw.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { ok: true, kind: "menu" };
+  const [head, tail] = words;
+  if (words.length > 2) return { ok: false };
+  if (head === "density") {
+    if (!tail) return { ok: true, kind: "density" };
+    if (tail === "comfortable" || tail === "compact") return { ok: true, kind: "density", value: tail };
+    return { ok: false };
+  }
+  if (head === "footer") {
+    if (!tail) return { ok: true, kind: "footer" };
+    if (tail === "standard" || tail === "minimal") return { ok: true, kind: "footer", value: tail };
+    return { ok: false };
+  }
+  if (head === "width") {
+    if (!tail) return { ok: true, kind: "width-menu" };
+    const parsed = parseSidebarWidthArg(tail);
+    if (!parsed.ok) return { ok: false };
+    return parsed.width === undefined
+      ? { ok: true, kind: "width" }
+      : { ok: true, kind: "width", width: parsed.width };
+  }
+  return { ok: false };
+}
+
+export function slateArgumentCompletions(prefix: string): { value: string; label: string }[] | null {
+  const normalized = prefix.trimStart().toLowerCase();
+  const matches = SLATE_COMPLETIONS.filter((value) => value.startsWith(normalized))
+    .map((value) => ({ value, label: value }));
+  return matches.length ? matches : null;
+}
+
 export function workspaceColumnWidth(totalWidth: number, preferred?: number): number {
   if (totalWidth < SIDEBAR_MIN_TERMINAL_WIDTH) return 0;
   const fallback = Math.max(SIDEBAR_MIN_WIDTH, Math.floor(totalWidth * SIDEBAR_DEFAULT_RATIO));

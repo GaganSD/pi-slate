@@ -23,6 +23,8 @@ import {
   modelLabel,
   parseSidebarWidth,
   parseSidebarWidthArg,
+  parseSlateArgs,
+  slateArgumentCompletions,
   sidebarHandleColumn,
   sidebarWidthFromScreenX,
   SIDEBAR_WIDTH_MEDIUM,
@@ -114,6 +116,24 @@ test("a preferred sidebar width is clamped and hidden on narrow terminals", () =
   assert.deepEqual(parseSidebarWidthArg("wide"), { ok: true, width: SIDEBAR_WIDTH_WIDE });
   assert.deepEqual(parseSidebarWidthArg("48"), { ok: true, width: 48 });
   assert.deepEqual(parseSidebarWidthArg("nope"), { ok: false });
+});
+
+test("/slate args route density, footer, and width", () => {
+  assert.deepEqual(parseSlateArgs(""), { ok: true, kind: "menu" });
+  assert.deepEqual(parseSlateArgs("density"), { ok: true, kind: "density" });
+  assert.deepEqual(parseSlateArgs("density compact"), { ok: true, kind: "density", value: "compact" });
+  assert.deepEqual(parseSlateArgs("footer minimal"), { ok: true, kind: "footer", value: "minimal" });
+  assert.deepEqual(parseSlateArgs("width"), { ok: true, kind: "width-menu" });
+  assert.deepEqual(parseSlateArgs("width default"), { ok: true, kind: "width" });
+  assert.deepEqual(parseSlateArgs("width 40"), { ok: true, kind: "width", width: 40 });
+  assert.deepEqual(parseSlateArgs("width nope"), { ok: false });
+  assert.deepEqual(parseSlateArgs("nope"), { ok: false });
+  assert.deepEqual(parseSlateArgs("density compact extra"), { ok: false });
+  assert.deepEqual(
+    slateArgumentCompletions("den"),
+    [{ value: "density", label: "density" }, { value: "density comfortable", label: "density comfortable" }, { value: "density compact", label: "density compact" }],
+  );
+  assert.equal(slateArgumentCompletions("nope"), null);
 });
 
 test("sidebar rows pin the footer dock and give the rest to content", () => {
