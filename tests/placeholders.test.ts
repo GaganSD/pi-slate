@@ -39,6 +39,14 @@ test("numbers placeholders from existing editor text", () => {
   assert.equal(nextImageNumber("see [image 1] and [image-3]"), 4);
 });
 
+test("rewrites the macOS temp clipboard path Pi actually writes", () => {
+  const store = new Map<string, string>();
+  const path =
+    "/var/folders/rf/b88_3vnj1f51k8qv9wpz8gw00000gn/T/pi-clipboard-e6240adb-ab5e-4e37-8096-507afd9215a4.png";
+  assert.equal(rewriteInsertedText(path, "", store), "[image-1]");
+  assert.equal(store.get("1"), path);
+});
+
 test("rewrites a pasted clipboard path to the next placeholder", () => {
   const store = new Map<string, string>();
   assert.equal(rewriteInsertedText(PATH, "", store), "[image-1]");

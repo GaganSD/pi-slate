@@ -13,11 +13,16 @@ import {
 import type { Sidebar } from "./sidebar.ts";
 
 const ORIGINAL_INSERT = Symbol.for("pi-extensions.sidebar.insertTextAtCursor");
+const ORIGINAL_PASTE = Symbol.for("pi-extensions.sidebar.handlePaste");
 const ORIGINAL_INPUT = Symbol.for("pi-extensions.sidebar.handleInput");
 const ORIGINAL_MOUSE = Symbol.for("pi-extensions.sidebar.handleMouse");
 
+type EditorPaste = (text: string) => void;
+
 type PatchableEditor = Editor & {
+  handlePaste(text: string): void;
   [ORIGINAL_INSERT]?: Editor["insertTextAtCursor"];
+  [ORIGINAL_PASTE]?: EditorPaste;
   [ORIGINAL_INPUT]?: Editor["handleInput"];
   [ORIGINAL_MOUSE]?: Editor["handleMouse"];
 };
@@ -36,37 +41,48 @@ function loadImage(filePath: string): ImageAttachment | undefined {
   };
 }
 
+function peekSafe(peek: ImagePeek, editor: Peekable): void {
+  try {
+    peek.update(editor);
+  } catch {
+    // Peek must not break typing or paste.
+  }
+}
+
+type Peekable = { getText(): string; getCursor(): { line: number; col: number } };
+
 function installEditorPatches(store: ImagePathStore, peek: ImagePeek): () => void {
   const proto = Editor.prototype as PatchableEditor;
   proto[ORIGINAL_INSERT] ??= proto.insertTextAtCursor;
+  proto[ORIGINAL_PASTE] ??= proto.handlePaste;
   proto[ORIGINAL_INPUT] ??= proto.handleInput;
   proto[ORIGINAL_MOUSE] ??= proto.handleMouse;
   const originalInsert = proto[ORIGINAL_INSERT];
+  const originalPaste = proto[ORIGINAL_PASTE];
   const originalInput = proto[ORIGINAL_INPUT];
   const originalMouse = proto[ORIGINAL_MOUSE];
 
   function insertPatch(this: Editor, text: string) {
-    return originalInsert.call(this, rewriteInsertedText(text, this.getText(), store));
+    const result = originalInsert.call(this, rewriteInsertedText(text, this.getText(), store));
+    peekSafe(peek, this);
+    return result;
+  }
+  function pastePatch(this: Editor, text: string) {
+    originalPaste.call(this, rewriteInsertedText(text, this.getText(), store));
+    peekSafe(peek, this);
   }
   function inputPatch(this: Editor, data: string) {
     originalInput.call(this, data);
-    try {
-      peek.update(this);
-    } catch {
-      // Peek must not break typing.
-    }
+    peekSafe(peek, this);
   }
   function mousePatch(this: Editor, event: Parameters<Editor["handleMouse"]>[0]) {
     const result = originalMouse.call(this, event);
-    try {
-      peek.update(this);
-    } catch {
-      // Peek must not break clicks.
-    }
+    peekSafe(peek, this);
     return result;
   }
 
   proto.insertTextAtCursor = insertPatch;
+  proto.handlePaste = pastePatch;
   proto.handleInput = inputPatch;
   proto.handleMouse = mousePatch;
 
@@ -74,6 +90,10 @@ function installEditorPatches(store: ImagePathStore, peek: ImagePeek): () => voi
     if (proto.insertTextAtCursor === insertPatch) {
       proto.insertTextAtCursor = originalInsert;
       if (proto[ORIGINAL_INSERT] === originalInsert) delete proto[ORIGINAL_INSERT];
+    }
+    if (proto.handlePaste === pastePatch) {
+      proto.handlePaste = originalPaste;
+      if (proto[ORIGINAL_PASTE] === originalPaste) delete proto[ORIGINAL_PASTE];
     }
     if (proto.handleInput === inputPatch) {
       proto.handleInput = originalInput;
