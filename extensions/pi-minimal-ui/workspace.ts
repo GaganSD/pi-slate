@@ -8,6 +8,7 @@ import {
   renderImage,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
+import { classifyDiffLine } from "./git-diff.ts";
 import { formatImageLocation, type ImageAttachment } from "./placeholders.ts";
 import { fitImageCells, placeWorkspaceImage, workspacePaneSlots } from "./workspace-layout.ts";
 
@@ -18,8 +19,54 @@ export type WorkspaceView = {
   handleClick?(x: number, y: number): boolean;
 };
 
+export class DiffWorkspaceView implements WorkspaceView {
+  readonly id: string;
+  private readonly state: "loading" | "diff" | "empty" | "error";
+  private readonly text: string;
+  private readonly theme: Theme;
+  private cached?: { key: string; lines: string[] };
+
+  constructor(
+    id: string,
+    state: "loading" | "diff" | "empty" | "error",
+    text: string,
+    theme: Theme,
+  ) {
+    this.id = `diff:${id}:${state}`;
+    this.state = state;
+    this.text = text;
+    this.theme = theme;
+  }
+
+  invalidate(): void { this.cached = undefined; }
+
+  render(width: number, height: number): string[] {
+    const key = `${width}x${height}`;
+    if (this.cached?.key === key) return this.cached.lines;
+    const source = this.state === "loading" ? ["Loading change…"]
+      : this.state === "diff" ? this.text.split(/\r?\n/)
+      : [this.text || (this.state === "empty" ? "No text diff is available." : "Preview unavailable.")];
+    const lines = source.slice(0, Math.max(0, height)).map((line) => {
+      const kind = classifyDiffLine(line);
+      const tone = kind === "added" ? "toolDiffAdded"
+        : kind === "removed" ? "toolDiffRemoved"
+        : kind === "hunk" ? "accent"
+        : kind === "header" ? "dim"
+        : "toolDiffContext";
+      return truncateToWidth(this.theme.fg(tone, line), width, "…");
+    });
+    while (lines.length < Math.max(0, height)) lines.push("");
+    this.cached = { key, lines };
+    return lines;
+  }
+}
+
 export class ImageWorkspaceView implements WorkspaceView {
   readonly id: string;
+  private readonly filePath: string;
+  private readonly attachment: ImageAttachment;
+  private readonly theme: Theme;
+  private readonly onCopyPath?: (filePath: string) => void;
   private imageId?: number;
   private cached?: { key: string; lines: string[] };
   private filenameRow?: number;
@@ -27,13 +74,17 @@ export class ImageWorkspaceView implements WorkspaceView {
 
   constructor(
     number: string,
-    private readonly filePath: string,
-    private readonly attachment: ImageAttachment,
-    private readonly theme: Theme,
+    filePath: string,
+    attachment: ImageAttachment,
+    theme: Theme,
     home?: string,
-    private readonly onCopyPath?: (filePath: string) => void,
+    onCopyPath?: (filePath: string) => void,
   ) {
     this.id = `image:${number}:${filePath}`;
+    this.filePath = filePath;
+    this.attachment = attachment;
+    this.theme = theme;
+    this.onCopyPath = onCopyPath;
     this.location = formatImageLocation(filePath, home, number);
   }
 

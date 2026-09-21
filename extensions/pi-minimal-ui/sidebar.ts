@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import { type Theme } from "@earendil-works/pi-coding-agent";
 import {
   truncateToWidth,
@@ -27,6 +26,7 @@ import {
 import { installSidebarSplit } from "./sidebar-split.ts";
 import { displayedTokenRate } from "./token-rate.ts";
 import type { WorkspaceView } from "./workspace.ts";
+import { formatTurnImpact, type TurnImpactSnapshot } from "./turn-impact.ts";
 import {
   filesWidgetDesiredHeight,
   sidebarDockLines,
@@ -44,6 +44,7 @@ export type SidebarContextData = {
 
 export type SidebarActions = {
   copyPath(filePath: string): void;
+  selectFile(file: FileChange): void;
 };
 
 export class Sidebar implements Component {
@@ -51,9 +52,11 @@ export class Sidebar implements Component {
   private theme?: Theme;
   private handle?: OverlayHandle;
   private splitDispose?: () => void;
-  private view?: WorkspaceView;
+  private selectedView?: WorkspaceView;
+  private transientView?: WorkspaceView;
+  private turnImpact: TurnImpactSnapshot = { revision: 0, filesRead: 0, filesModified: 0, shellCommands: 0, testsPassed: 0, testsFailed: 0, testsUnknown: 0 };
   private contextData: SidebarContextData = { tokens: null, percent: null, tokensPerSec: 0 };
-  private lastSlots = { reservedHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
+  private lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0 };
   private mcpConnected: number | null = null;
   private skillsLoaded = 0;
   private files: FileChange[] = [];
@@ -98,12 +101,29 @@ export class Sidebar implements Component {
     this.actions?.copyPath(filePath);
   }
 
+  /** Temporary image preview; it overrides but never discards a selected file preview. */
   setView(view: WorkspaceView | undefined): void {
-    if (this.view?.id === view?.id) return;
-    this.view = view;
+    if (this.transientView?.id === view?.id) return;
+    this.transientView = view;
     this.contentCached = undefined;
     this.tui?.requestRender();
   }
+
+  setSelectedPreview(view: WorkspaceView | undefined): void {
+    if (this.selectedView?.id === view?.id) return;
+    this.selectedView = view;
+    this.contentCached = undefined;
+    this.tui?.requestRender();
+  }
+
+  setTurnImpact(impact: TurnImpactSnapshot): void {
+    if (this.turnImpact.revision === impact.revision) return;
+    this.turnImpact = impact;
+    this.contentCached = undefined;
+    this.tui?.requestRender();
+  }
+
+  private effectiveView(): WorkspaceView | undefined { return this.transientView ?? this.selectedView; }
 
   setContext(data: SidebarContextData): void {
     if (
@@ -152,34 +172,36 @@ export class Sidebar implements Component {
   }
 
   currentViewId(): string | undefined {
-    return this.view?.id;
+    return this.effectiveView()?.id;
   }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    const { filesHeight, filesDivider, reservedHeight, dividerHeight, peekHeight } = this.lastSlots;
-    const peekStart = filesHeight + filesDivider + reservedHeight + dividerHeight;
-    if (event.type === "wheel" && event.y >= 0 && event.y < filesHeight) {
+    const { summaryHeight, filesHeight, dividerHeight, peekHeight } = this.lastSlots;
+    const filesStart = summaryHeight > 0 ? 1 : 0;
+    const peekStart = summaryHeight + dividerHeight;
+    if (event.type === "wheel" && event.y >= filesStart && event.y < filesStart + filesHeight) {
       if (!this.scrollFiles(-(event.wheelDelta ?? 0))) return undefined;
       return { handled: true };
     }
-    if (event.type === "click" && event.button === "left" && event.y >= 0 && event.y < filesHeight) {
-      const file = fileAtPanelRow(this.files, filesHeight, this.filesOffset, event.y);
+    if (event.type === "click" && event.button === "left" && event.y >= filesStart && event.y < filesStart + filesHeight) {
+      const file = fileAtPanelRow(this.files, filesHeight, this.filesOffset, event.y - filesStart);
       if (!file) return undefined;
-      this.copyPath(this.cwd ? resolve(this.cwd, file.path) : file.path);
+      this.actions?.selectFile(file);
       return { handled: true };
     }
-    if (event.type !== "click" || event.button !== "left" || !this.view?.handleClick) return undefined;
+    const view = this.effectiveView();
+    if (event.type !== "click" || event.button !== "left" || !view?.handleClick) return undefined;
     const titleOffset = peekHeight > 1 ? 1 : 0;
     const y = event.y - peekStart - titleOffset;
-    if (y < 0 || y >= peekHeight - titleOffset) return undefined;
-    if (!this.view.handleClick(event.x, y)) return undefined;
+    if (y < 0 || y >= peekHeight - titleOffset || !view.handleClick(event.x, y)) return undefined;
     return { handled: true };
   }
 
   invalidate(): void {
     this.contentCached = undefined;
     this.dockCached = undefined;
-    this.view?.invalidate();
+    this.selectedView?.invalidate();
+    this.transientView?.invalidate();
   }
 
   render(width: number): string[] {
@@ -189,7 +211,7 @@ export class Sidebar implements Component {
       height,
       sidebarDockLines(),
     );
-    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.view?.id ?? ""}`;
+    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}`;
     const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${displayedTokenRate(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
       ? this.contentCached.lines
@@ -208,14 +230,15 @@ export class Sidebar implements Component {
     this.splitActive = false;
     this.handle?.hide();
     this.handle = undefined;
-    this.view = undefined;
+    this.selectedView = undefined;
+    this.transientView = undefined;
     this.files = [];
     this.filesRev = 0;
     this.filesOffset = 0;
     this.cwd = "";
     this.contentCached = undefined;
     this.dockCached = undefined;
-    this.lastSlots = { reservedHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
+    this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0 };
     this.tui = undefined;
     this.theme = undefined;
   }
@@ -242,19 +265,27 @@ export class Sidebar implements Component {
 
   private contentLines(width: number, height: number, theme: Theme | undefined): string[] {
     if (height < 1) {
-      this.lastSlots = { reservedHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
+      this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0 };
       return [];
     }
-    const { filesHeight, filesDivider, reservedHeight, dividerHeight, peekHeight } = this.lastSlots = splitSidebarContent(
-      height,
-      filesWidgetDesiredHeight(this.files.length),
-    );
-    const lines: string[] = [...this.filesLines(width, filesHeight, theme)];
-    this.pushRule(lines, filesDivider, width, theme);
-    lines.push(...this.padBlock([], reservedHeight, width, theme));
-    this.pushRule(lines, dividerHeight, width, theme);
-    lines.push(...this.peekLines(width, peekHeight, theme));
+    const slots = this.lastSlots = splitSidebarContent(height, filesWidgetDesiredHeight(this.files.length));
+    const lines: string[] = [...this.summaryLines(width, slots.summaryHeight, slots.filesHeight, theme)];
+    this.pushRule(lines, slots.dividerHeight, width, theme);
+    lines.push(...this.peekLines(width, slots.peekHeight, theme));
     return lines;
+  }
+
+  private summaryLines(width: number, height: number, filesHeight: number, theme: Theme | undefined): string[] {
+    if (height < 1) return [];
+    const lines = [this.heading("Summary", width, theme)];
+    lines.push(...this.filesLines(width, filesHeight, theme));
+    const impact = formatTurnImpact(this.turnImpact);
+    if (lines.length < height) lines.push(this.heading("Last Turn", width, theme));
+    for (const line of impact) {
+      if (lines.length >= height) break;
+      lines.push(this.body(line, width, theme, "muted"));
+    }
+    return this.padBlock(lines, height, width, theme);
   }
 
   private peekLines(width: number, maxHeight: number, theme: Theme | undefined): string[] {
@@ -262,11 +293,12 @@ export class Sidebar implements Component {
     const lines = [this.heading("Preview", width, theme)];
     const bodyHeight = maxHeight - 1;
     if (bodyHeight < 1) return lines;
-    if (!this.view) {
+    const view = this.effectiveView();
+    if (!view) {
       lines.push(this.body("none", width, theme, "dim"));
       return this.padBlock(lines, maxHeight, width, theme);
     }
-    const peek = this.view.render(Math.max(0, width - 2), bodyHeight);
+    const peek = view.render(Math.max(0, width - 2), bodyHeight);
     for (let row = 0; row < bodyHeight; row++) {
       lines.push(this.decorateLine(peek[row] ?? "", width, theme));
     }

@@ -20,7 +20,10 @@ import {
 } from "@earendil-works/pi-tui";
 import { installImagePlaceholders } from "./image-placeholders.ts";
 import { GitStatusPoller } from "./git-status.ts";
+import { GitDiffPreviewLoader } from "./git-diff.ts";
 import { Sidebar } from "./sidebar.ts";
+import { DiffWorkspaceView } from "./workspace.ts";
+import { TurnImpactTracker } from "./turn-impact.ts";
 import { estimateAssistantTokens, TokenRateTracker } from "./token-rate.ts";
 import { createWordPicker } from "./working-words.ts";
 import {
@@ -162,7 +165,13 @@ class MinimalFooter implements Component {
 export default function piMinimalUi(pi: ExtensionAPI): void {
   const sidebar = new Sidebar();
   const images = installImagePlaceholders(pi, sidebar);
-  const files = new GitStatusPoller((changes) => sidebar.setFiles(changes));
+  let fileSnapshot = "";
+  const files = new GitStatusPoller((changes) => {
+    fileSnapshot = changes.map((file) => `${file.index}${file.worktree}:${file.path}:${file.origPath ?? ""}`).join("\0");
+    sidebar.setFiles(changes);
+  });
+  const diffs = new GitDiffPreviewLoader();
+  const turnImpact = new TurnImpactTracker();
   let config = loadConfig();
   let currentContext: ExtensionContext | undefined;
   let activeEditor: CustomEditor | undefined;
@@ -206,13 +215,29 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     if (ctx.mode !== "tui") return;
 
     files.start(ctx.cwd);
+    diffs.clear();
     sidebar.setCwd(ctx.cwd);
+    sidebar.setSelectedPreview(undefined);
+    sidebar.setTurnImpact(turnImpact.reset());
     sidebar.setActions({
       copyPath: (filePath) => {
         void copyToClipboard(filePath).then(
           () => ctx.ui.notify("Copied file location", "info"),
           () => ctx.ui.notify("Could not copy file location", "error"),
         );
+      },
+      selectFile: (file) => {
+        const selectionId = `${file.index}${file.worktree}:${file.path}:${file.origPath ?? ""}`;
+        const cached = diffs.peek(ctx.cwd, file, fileSnapshot);
+        sidebar.setSelectedPreview(new DiffWorkspaceView(
+          selectionId,
+          cached?.state ?? "loading",
+          cached?.text ?? "",
+          ctx.ui.theme,
+        ));
+        void diffs.select(ctx.cwd, file, fileSnapshot, (result) => {
+          sidebar.setSelectedPreview(new DiffWorkspaceView(selectionId, result.state, result.text, ctx.ui.theme));
+        });
       },
     });
     ctx.ui.setTitle(`Pi · ${basename(ctx.cwd)}`);
@@ -281,7 +306,14 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     if (event.message.role === "assistant") tokenRate.endMessage();
     syncSidebar(ctx);
   });
-  pi.on("tool_execution_end", () => {
+  pi.on("turn_start", () => {
+    sidebar.setTurnImpact(turnImpact.reset());
+  });
+  pi.on("tool_call", (event) => {
+    sidebar.setTurnImpact(turnImpact.toolCall({ toolCallId: event.toolCallId, toolName: event.toolName, input: event.input }));
+  });
+  pi.on("tool_execution_end", (event) => {
+    sidebar.setTurnImpact(turnImpact.toolEnd({ toolCallId: event.toolCallId, isError: event.isError }));
     void files.refresh();
   });
   pi.on("turn_end", (_event, ctx) => {
@@ -302,6 +334,7 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     tokenRate.dispose();
     images.dispose();
     files.dispose();
+    diffs.clear();
     sidebar.dispose();
     requestRender(true);
     if (ctx.mode !== "tui") return;

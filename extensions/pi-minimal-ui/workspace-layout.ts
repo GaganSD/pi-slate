@@ -30,39 +30,21 @@ export function splitSidebarContent(
   height: number,
   filesDesired: number,
 ): {
+  summaryHeight: number;
   filesHeight: number;
-  filesDivider: number;
-  reservedHeight: number;
   dividerHeight: number;
   peekHeight: number;
 } {
   const slotHeight = Math.max(0, Math.floor(height));
   const filesWant = Math.max(0, Math.min(FILES_WIDGET_MAX_LINES, Math.floor(filesDesired)));
-  if (slotHeight === 0) {
-    return { filesHeight: 0, filesDivider: 0, reservedHeight: 0, dividerHeight: 0, peekHeight: 0 };
-  }
-
-  const minRest = 2;
-  let filesHeight = Math.min(filesWant, slotHeight);
-  if (slotHeight > filesHeight && slotHeight - filesHeight < minRest) {
-    filesHeight = Math.max(0, slotHeight - minRest);
-  }
-
-  let filesDivider = 0;
-  const rest = slotHeight - filesHeight;
-  if (filesHeight > 0 && rest >= 3) filesDivider = 1;
-
-  const contentHeight = slotHeight - filesHeight - filesDivider;
-  const dividerHeight = contentHeight >= 3 ? 1 : 0;
-  const availableHeight = contentHeight - dividerHeight;
-  const reservedHeight = availableHeight > 0 ? Math.max(1, Math.floor(availableHeight / 2)) : 0;
-  return {
-    filesHeight,
-    filesDivider,
-    reservedHeight,
-    dividerHeight,
-    peekHeight: availableHeight - reservedHeight,
-  };
+  // Keep Preview usable first; Summary expands only into the space it needs.
+  if (slotHeight <= 2) return { summaryHeight: 0, filesHeight: 0, dividerHeight: 0, peekHeight: slotHeight };
+  const summaryWant = Math.min(10, 2 + filesWant + 3); // Summary, files, Last Turn, three facts.
+  const summaryHeight = Math.min(summaryWant, slotHeight - 2);
+  const dividerHeight = summaryHeight > 0 ? 1 : 0;
+  const peekHeight = slotHeight - summaryHeight - dividerHeight;
+  const filesHeight = Math.min(filesWant, Math.max(0, summaryHeight - 3));
+  return { summaryHeight, filesHeight, dividerHeight, peekHeight };
 }
 
 export function workspacePaneSlots(height: number): {

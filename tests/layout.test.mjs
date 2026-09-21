@@ -118,34 +118,23 @@ test("files widget stays compact and never exceeds five lines", () => {
   assert.equal(filesWidgetDesiredHeight(12), 5);
 });
 
-test("sidebar content preserves the empty reserved pane before preview", () => {
+test("sidebar content uses a compact summary and retains Preview", () => {
+  for (const height of [1, 2, 6, 20]) {
+    const slots = splitSidebarContent(height, 5);
+    assert.equal("reservedHeight" in slots, false);
+    assert.ok(slots.filesHeight <= FILES_WIDGET_MAX_LINES);
+    assert.ok(slots.summaryHeight >= 0 && slots.dividerHeight >= 0 && slots.peekHeight >= 0);
+    assert.equal(slots.summaryHeight + slots.dividerHeight + slots.peekHeight, height);
+    assert.ok(slots.peekHeight >= 1);
+  }
   assert.deepEqual(splitSidebarContent(20, 5), {
-    filesHeight: 5,
-    filesDivider: 1,
-    reservedHeight: 6,
-    dividerHeight: 1,
-    peekHeight: 7,
-  });
-  assert.deepEqual(splitSidebarContent(20, 2), {
-    filesHeight: 2,
-    filesDivider: 1,
-    reservedHeight: 8,
-    dividerHeight: 1,
-    peekHeight: 8,
+    summaryHeight: 10, filesHeight: 5, dividerHeight: 1, peekHeight: 9,
   });
   assert.deepEqual(splitSidebarContent(6, 5), {
-    filesHeight: 4,
-    filesDivider: 0,
-    reservedHeight: 1,
-    dividerHeight: 0,
-    peekHeight: 1,
+    summaryHeight: 4, filesHeight: 1, dividerHeight: 1, peekHeight: 1,
   });
-  assert.deepEqual(splitSidebarContent(1, 2), {
-    filesHeight: 1,
-    filesDivider: 0,
-    reservedHeight: 0,
-    dividerHeight: 0,
-    peekHeight: 0,
+  assert.deepEqual(splitSidebarContent(3, 5), {
+    summaryHeight: 1, filesHeight: 0, dividerHeight: 1, peekHeight: 1,
   });
 });
 
