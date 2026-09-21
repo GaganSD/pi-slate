@@ -310,7 +310,6 @@ export class Sidebar implements Component {
     lines.push(...files);
     if (extra > 1) lines.push(empty);
     if (lines.length < height) lines.push(this.heading("Last Turn", width, theme));
-    if (extra > 2) lines.push(empty);
     this.lastSlots = { ...this.lastSlots, impactStart: lines.length };
     for (const line of impact) {
       if (lines.length >= height) break;
