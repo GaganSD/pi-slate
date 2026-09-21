@@ -10,6 +10,7 @@ import {
   SLATE_NEW_ISSUE_URL,
   SLATE_REPO,
 } from "../extensions/pi-slate/bug.ts";
+import { SLATE_VERSION } from "../extensions/pi-slate/layout.ts";
 
 test("bug links stay on the slate issues tracker", () => {
   assert.equal(SLATE_ISSUES_URL, "https://github.com/GaganSD/pi-slate/issues");
@@ -22,10 +23,11 @@ test("bug links stay on the slate issues tracker", () => {
 });
 
 test("issue template includes environment and empty report sections", () => {
-  const body = issueTemplate({ slateVersion: "0.1.0", piVersion: "0.85.1", platform: "darwin arm64" });
+  assert.match(SLATE_VERSION, /^\d+\.\d+\.\d+$/);
+  const body = issueTemplate({ slateVersion: SLATE_VERSION, piVersion: "0.85.1", platform: "darwin arm64" });
   assert.match(body, /## What happened/);
   assert.match(body, /## Expected/);
-  assert.match(body, /- pi-slate: 0\.1\.0/);
+  assert.match(body, new RegExp(`- pi-slate: ${SLATE_VERSION}`));
   assert.match(body, /- pi: 0\.85\.1/);
   assert.match(body, /- platform: darwin arm64/);
 });

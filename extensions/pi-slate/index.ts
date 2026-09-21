@@ -48,6 +48,7 @@ import {
   messageLengthMessage,
   slateArgumentCompletions,
   SLATE_USAGE,
+  SLATE_VERSION,
   SIDEBAR_PERCENT_DEFAULT,
   SIDEBAR_PERCENT_MEDIUM,
   SIDEBAR_PERCENT_NARROW,
@@ -68,12 +69,15 @@ import {
   SLATE_NEW_ISSUE_URL,
 } from "./bug.ts";
 import { syncMessageWindow, type MessageWindow } from "./message-window.ts";
+import { applySlateTheme, persistFullscreen, shouldApplyInstallDefault } from "./install-defaults.ts";
 
 type SlateConfig = {
   density: "comfortable" | "compact";
   footer: "standard" | "minimal";
   sidebarPercent?: number;
   messageLength?: number | "all";
+  themeApplied?: boolean;
+  fullscreenApplied?: boolean;
 };
 
 const CONFIG_PATH = join(getAgentDir(), "pi-slate.json");
@@ -97,6 +101,8 @@ function loadConfig(): SlateConfig {
       footer: value.footer === "minimal" ? "minimal" : "standard",
       ...(sidebarPercent === undefined ? {} : { sidebarPercent }),
       ...(messageLength === undefined ? {} : { messageLength }),
+      ...(value.themeApplied === true ? { themeApplied: true } : {}),
+      ...(value.fullscreenApplied === true ? { fullscreenApplied: true } : {}),
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -289,6 +295,24 @@ export default function piSlate(pi: ExtensionAPI): void {
   const install = (ctx: ExtensionContext): void => {
     currentContext = ctx;
     if (ctx.mode !== "tui") return;
+    if (shouldApplyInstallDefault(config.themeApplied) && applySlateTheme(ctx)) {
+      const next = { ...config, themeApplied: true };
+      try {
+        saveConfig(next);
+        config = next;
+      } catch {
+        // Retry on the next session if the marker cannot be saved.
+      }
+    }
+    if (shouldApplyInstallDefault(config.fullscreenApplied) && persistFullscreen(ctx.cwd)) {
+      const next = { ...config, fullscreenApplied: true };
+      try {
+        saveConfig(next);
+        config = next;
+      } catch {
+        // Retry on the next session if the marker cannot be saved.
+      }
+    }
 
     files.start(ctx.cwd);
     diffs.clear();
@@ -585,7 +609,7 @@ export default function piSlate(pi: ExtensionAPI): void {
     const body = await ctx.ui.editor(
       "Issue details",
       issueTemplate({
-        slateVersion: "0.1.0",
+        slateVersion: SLATE_VERSION,
         piVersion: VERSION,
         platform: `${process.platform} ${process.arch}`,
       }),
