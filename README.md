@@ -56,7 +56,6 @@ TODO For Pi: List all commands and write a simple 1 liner about their effect in 
 Slate adds no context bloat -- no tools, prompts, or model calls. It's entirely deterministic and made to be customizable and purely improves your interface and pi experience while your Pi remains yours.
 
 ## Requirements/limits
-- Tested on on Pi Agent 0.86+.
 - Inline previews need Kitty or iTerm2 image-protocol support detected by Pi. Otherwise, previews fall back to text. Terminal multiplexers and proxies can affect detection.
 - **Other UI extensions:** Slate replaces Pi's header, footer, and editor. Extensions that replace the same surfaces may conflict.
 - File an issue for bug: [pi-slate](https://github.com/GaganSD/pi-slate/issues)
