@@ -41,7 +41,12 @@ class NullTerminal implements Terminal {
   setProgress(_active: boolean): void {}
 }
 
-function fixture(t: TestContext, count = 100, scrollbar: "auto" | "always" | "hidden" = "auto") {
+function fixture(
+  t: TestContext,
+  count = 100,
+  scrollbar: "auto" | "always" | "hidden" = "auto",
+  preferred?: { value?: number },
+) {
   const terminal = new NullTerminal();
   const tui = new TuiAltScreen(terminal);
   const chat = new Container();
@@ -71,7 +76,7 @@ function fixture(t: TestContext, count = 100, scrollbar: "auto" | "always" | "hi
   ]);
   const pane = new Text("SIDEBAR\nReserved / MCP", 0, 0);
   tui.setLayoutRoot(main);
-  const dispose = installSidebarSplit(tui, pane);
+  const dispose = installSidebarSplit(tui, pane, preferred ? () => preferred.value : undefined);
   assert(dispose, "Fullscreen must mount the real sidebar split");
   t.after(() => {
     tui.stop({ preserveScreen: true });
@@ -96,10 +101,10 @@ function fixture(t: TestContext, count = 100, scrollbar: "auto" | "always" | "hi
     assert.equal(frame.lines.length, terminal.rows);
     for (const line of frame.lines) assert(visibleWidth(line) <= terminal.columns);
     const lines = frame.lines.map(stripVTControlCharacters);
-    if (workspaceColumnWidth(terminal.columns)) {
+    if (workspaceColumnWidth(terminal.columns, preferred?.value)) {
       const sidebarIndex = lines[0].indexOf("SIDEBAR");
       assert(sidebarIndex >= 0);
-      assert.equal(visibleWidth(lines[0].slice(0, sidebarIndex)), mainColumnWidth(terminal.columns));
+      assert.equal(visibleWidth(lines[0].slice(0, sidebarIndex)), mainColumnWidth(terminal.columns, preferred?.value));
     } else {
       assert(lines.every((line) => !line.includes("SIDEBAR")));
     }
@@ -178,4 +183,20 @@ test("theme invalidation and root remounting keep correct cache lifetimes", (t) 
   f.tui.renderNow();
   f.assertCached();
   f.assertFrame();
+});
+
+test("committing a preferred sidebar width reformats chat once", (t) => {
+  const preferred: { value?: number } = {};
+  const f = fixture(t, 20, "auto", preferred);
+  f.reset();
+  f.tui.renderNow();
+  f.assertCached();
+  preferred.value = 48;
+  f.reset();
+  f.tui.renderNow();
+  assert.deepEqual(f.reformats, Array(20).fill(1), "One reformat after the committed width change");
+  f.assertFrame();
+  f.reset();
+  f.tui.renderNow();
+  f.assertCached();
 });

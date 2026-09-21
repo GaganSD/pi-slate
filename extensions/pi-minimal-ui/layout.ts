@@ -118,12 +118,39 @@ export const WORKSPACE_EDITOR_RESERVE = 5;
 export const SIDEBAR_MIN_TERMINAL_WIDTH = WORKSPACE_MIN_TERMINAL_WIDTH;
 export const SIDEBAR_MIN_WIDTH = WORKSPACE_MIN_WIDTH;
 export const SIDEBAR_EDITOR_RESERVE = WORKSPACE_EDITOR_RESERVE;
+export const SIDEBAR_DEFAULT_RATIO = 0.2;
+export const SIDEBAR_MAIN_MIN_WIDTH = SIDEBAR_MIN_TERMINAL_WIDTH - SIDEBAR_MIN_WIDTH;
+export const SIDEBAR_HANDLE_MAX_X = 1;
 
-export function workspaceColumnWidth(totalWidth: number): number {
-  if (totalWidth < WORKSPACE_MIN_TERMINAL_WIDTH) return 0;
-  return Math.max(WORKSPACE_MIN_WIDTH, Math.floor(totalWidth * 0.2));
+export function maxSidebarWidth(totalWidth: number): number {
+  return Math.max(0, totalWidth - SIDEBAR_MAIN_MIN_WIDTH);
 }
 
-export function mainColumnWidth(totalWidth: number): number {
-  return Math.max(1, totalWidth - workspaceColumnWidth(totalWidth));
+export function parseSidebarWidth(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const columns = Math.round(value);
+  return columns >= 1 ? columns : undefined;
+}
+
+export function workspaceColumnWidth(totalWidth: number, preferred?: number): number {
+  if (totalWidth < WORKSPACE_MIN_TERMINAL_WIDTH) return 0;
+  const fallback = Math.max(SIDEBAR_MIN_WIDTH, Math.floor(totalWidth * SIDEBAR_DEFAULT_RATIO));
+  const desired = preferred ?? fallback;
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(maxSidebarWidth(totalWidth), desired));
+}
+
+export function mainColumnWidth(totalWidth: number, preferred?: number): number {
+  return Math.max(1, totalWidth - workspaceColumnWidth(totalWidth, preferred));
+}
+
+export function sidebarWidthFromScreenX(totalWidth: number, screenX: number): number {
+  return workspaceColumnWidth(totalWidth, totalWidth - screenX);
+}
+
+export function sidebarHandleColumn(totalWidth: number, sidebarWidth: number): number {
+  return Math.max(0, totalWidth - sidebarWidth);
+}
+
+export function isSidebarResizeHandle(event: { button: string; x: number }): boolean {
+  return event.button === "left" && event.x <= SIDEBAR_HANDLE_MAX_X;
 }

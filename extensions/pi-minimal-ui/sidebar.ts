@@ -5,6 +5,7 @@ import {
   visibleWidth,
   type Component,
   type OverlayHandle,
+  type OverlayOptions,
   type TUI,
   type TuiMouseEvent,
   type TuiMouseEventResult,
@@ -12,9 +13,13 @@ import {
 import {
   formatContextResources,
   formatContextTokens,
+  isSidebarResizeHandle,
+  parseSidebarWidth,
   SIDEBAR_EDITOR_RESERVE,
   SIDEBAR_MIN_TERMINAL_WIDTH,
   SIDEBAR_MIN_WIDTH,
+  sidebarHandleColumn,
+  workspaceColumnWidth,
 } from "./layout.ts";
 import {
   clampFilesOffset,
@@ -51,13 +56,21 @@ export type SidebarContextData = {
 export type SidebarActions = {
   copyPath(filePath: string): void;
   selectFile(file: FileChange): void;
+  persistWidth?(columns: number): void;
 };
 
 export class Sidebar implements Component {
   private tui?: TUI;
   private theme?: Theme;
   private handle?: OverlayHandle;
+  private overlayOptions?: OverlayOptions;
   private splitDispose?: () => void;
+  private guideHandle?: OverlayHandle;
+  private guideOptions?: OverlayOptions;
+  private resizing = false;
+  private resizeStartScreenX = 0;
+  private resizeStartWidth = 0;
+  private _preferredWidth?: number;
   private selectedView?: WorkspaceView;
   private transientView?: WorkspaceView;
   private turnImpact: TurnImpactSnapshot = emptyTurnImpact();
@@ -88,20 +101,33 @@ export class Sidebar implements Component {
     this.tui = tui;
     this.theme = theme;
     if (this.splitDispose || this.handle) return;
-    this.splitDispose = installSidebarSplit(tui, this);
+    this.splitDispose = installSidebarSplit(tui, this, () => this._preferredWidth);
     this.splitActive = Boolean(this.splitDispose);
     this.contentCached = undefined;
     this.dockCached = undefined;
     if (this.splitActive) return;
-    this.handle = tui.showOverlay(this, {
+    this.overlayOptions = {
       nonCapturing: true,
       anchor: "top-right",
-      width: "20%",
+      width: this.overlayWidth(tui.terminal.columns),
       minWidth: SIDEBAR_MIN_WIDTH,
       maxHeight: "100%",
       margin: { top: 0, right: 0, bottom: SIDEBAR_EDITOR_RESERVE, left: 0 },
       visible: (termWidth) => termWidth >= SIDEBAR_MIN_TERMINAL_WIDTH,
-    });
+    };
+    this.handle = tui.showOverlay(this, this.overlayOptions);
+  }
+
+  get preferredWidth(): number | undefined {
+    return this._preferredWidth;
+  }
+
+  setPreferredWidth(width: number | undefined): void {
+    const next = width === undefined ? undefined : parseSidebarWidth(width);
+    if (this._preferredWidth === next) return;
+    this._preferredWidth = next;
+    this.syncOverlayWidth();
+    this.tui?.requestRender();
   }
 
   setActions(actions: SidebarActions): void {
@@ -195,6 +221,20 @@ export class Sidebar implements Component {
   }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (this.resizing) {
+      if (event.type === "drag" || event.type === "move") return this.moveResizeGuide(event.screenX);
+      if (event.type === "release") {
+        this.commitResize(event.screenX);
+        return { handled: true, render: true };
+      }
+      if (event.type === "click") return { handled: true };
+    }
+    if (event.type === "press" && isSidebarResizeHandle(event)) {
+      this.beginResize(event.screenX);
+      return { handled: true, capture: true, render: true };
+    }
+    if (event.type === "click" && isSidebarResizeHandle(event)) return { handled: true };
+
     const { summaryHeight, filesHeight, dividerHeight, peekHeight, filesStart, impactStart } = this.lastSlots;
     const peekStart = summaryHeight + dividerHeight;
     const filters = turnFilters();
@@ -252,6 +292,7 @@ export class Sidebar implements Component {
   }
 
   render(width: number): string[] {
+    this.syncOverlayWidth();
     const theme = this.theme;
     const height = Math.max(1, this.tui?.terminal.rows ?? 1);
     const { contentHeight, dockHeight } = sidebarRowSlots(
@@ -272,11 +313,14 @@ export class Sidebar implements Component {
   }
 
   dispose(): void {
+    this.hideResizeGuide();
+    this.resizing = false;
     this.splitDispose?.();
     this.splitDispose = undefined;
     this.splitActive = false;
     this.handle?.hide();
     this.handle = undefined;
+    this.overlayOptions = undefined;
     this.selectedView = undefined;
     this.transientView = undefined;
     this.files = [];
@@ -460,6 +504,87 @@ export class Sidebar implements Component {
     return `${theme.fg("borderMuted", "│")}${theme.fg("borderMuted", "─".repeat(Math.max(0, width - 1)))}`;
   }
 
+  private displayedWidth(totalWidth = this.tui?.terminal.columns ?? 0): number {
+    return workspaceColumnWidth(totalWidth, this._preferredWidth);
+  }
+
+  private overlayWidth(totalWidth: number): OverlayOptions["width"] {
+    return this.displayedWidth(totalWidth) || "20%";
+  }
+
+  private syncOverlayWidth(): void {
+    if (!this.overlayOptions || !this.tui) return;
+    const width = this.overlayWidth(this.tui.terminal.columns);
+    if (this.overlayOptions.width !== width) this.overlayOptions.width = width;
+  }
+
+  private beginResize(screenX: number): void {
+    this.resizing = true;
+    this.resizeStartScreenX = screenX;
+    this.resizeStartWidth = this.displayedWidth();
+    this.showResizeGuide(screenX);
+  }
+
+  private moveResizeGuide(screenX: number): TuiMouseEventResult {
+    if (!this.guideOptions) {
+      this.showResizeGuide(screenX);
+      return { handled: true, render: true };
+    }
+    const col = this.guideColumn(screenX);
+    if (this.guideOptions.col === col) return { handled: true, render: false };
+    this.guideOptions.col = col;
+    return { handled: true, render: true };
+  }
+
+  private commitResize(screenX: number): void {
+    const next = this.widthFromPointer(screenX);
+    this.hideResizeGuide();
+    this.resizing = false;
+    if (next === this.resizeStartWidth || next <= 0) return;
+    this.setPreferredWidth(next);
+    this.actions?.persistWidth?.(next);
+  }
+
+  private showResizeGuide(screenX: number): void {
+    if (!this.tui) return;
+    const col = this.guideColumn(screenX);
+    if (this.guideOptions && this.guideHandle) {
+      this.guideOptions.col = col;
+      return;
+    }
+    this.guideOptions = {
+      nonCapturing: true,
+      width: 1,
+      minWidth: 1,
+      col,
+      row: 0,
+      maxHeight: "100%",
+    };
+    this.guideHandle = this.tui.showOverlay(
+      new ResizeGuide(() => this.tui?.terminal.rows ?? 1, this.theme),
+      this.guideOptions,
+    );
+  }
+
+  private hideResizeGuide(): void {
+    this.guideHandle?.hide();
+    this.guideHandle = undefined;
+    this.guideOptions = undefined;
+  }
+
+  private widthFromPointer(screenX: number): number {
+    const total = this.tui?.terminal.columns ?? 0;
+    return workspaceColumnWidth(
+      total,
+      this.resizeStartWidth + this.resizeStartScreenX - screenX,
+    );
+  }
+
+  private guideColumn(screenX: number): number {
+    const total = this.tui?.terminal.columns ?? 0;
+    return sidebarHandleColumn(total, this.widthFromPointer(screenX));
+  }
+
   private decorateLine(line: string, width: number, theme: Theme | undefined): string {
     if (line.includes(KITTY_PREFIX) || line.includes("\x1b]1337;File=")) {
       return theme ? `${theme.fg("borderMuted", "│")} ${line}` : `│ ${line}`;
@@ -467,6 +592,23 @@ export class Sidebar implements Component {
     if (!theme) return truncateToWidth(line, width);
     if (line.length === 0) return theme.fg("borderMuted", "│");
     return `${theme.fg("borderMuted", "│")}${truncateToWidth(` ${line}`, Math.max(0, width - 1))}`;
+  }
+}
+
+class ResizeGuide implements Component {
+  private readonly rows: () => number;
+  private readonly theme?: Theme;
+
+  constructor(rows: () => number, theme?: Theme) {
+    this.rows = rows;
+    this.theme = theme;
+  }
+
+  invalidate(): void {}
+
+  render(_width: number): string[] {
+    const mark = this.theme ? this.theme.fg("accent", "│") : "│";
+    return Array.from({ length: Math.max(1, this.rows()) }, () => mark);
   }
 }
 

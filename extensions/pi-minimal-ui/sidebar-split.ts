@@ -43,7 +43,7 @@ class SidebarSplit extends HStack {
     return this.entries[0]?.component ?? this.children[0]!;
   }
 
-  constructor(chat: Component, pane: Component) {
+  constructor(chat: Component, pane: Component, preferredWidth?: () => number | undefined) {
     const gutter = new SidebarGutter(pane);
     super([
       // Skip full-width intrinsic measurement: switching widths thrashes leaf render caches.
@@ -55,7 +55,7 @@ class SidebarSplit extends HStack {
         minSize: SIDEBAR_MIN_WIDTH,
         basis: SIDEBAR_MIN_WIDTH,
         visible: (viewport) => {
-          const width = workspaceColumnWidth(viewport.width);
+          const width = workspaceColumnWidth(viewport.width, preferredWidth?.());
           const entry = this.entries[1];
           if (entry && entry.basis !== width) entry.basis = Math.max(SIDEBAR_MIN_WIDTH, width);
           return width > 0;
@@ -76,14 +76,18 @@ export function splitChat(component: Component | undefined): Component | undefin
   return component.chat();
 }
 
-export function installSidebarSplit(tui: TUI, pane: Component): (() => void) | undefined {
+export function installSidebarSplit(
+  tui: TUI,
+  pane: Component,
+  preferredWidth?: () => number | undefined,
+): (() => void) | undefined {
   if (!isViewportTUI(tui)) return undefined;
 
   return bindSplitHost(
     tui,
     (component) => {
       const chat = splitChat(component);
-      return chat ? new SidebarSplit(chat, pane) : component;
+      return chat ? new SidebarSplit(chat, pane, preferredWidth) : component;
     },
     splitChat,
   );

@@ -39,11 +39,13 @@ import {
   mainColumnWidth,
   modelLabel,
   parseMcpConnectedCount,
+  parseSidebarWidth,
 } from "./layout.ts";
 
 type MinimalUiConfig = {
   density: "comfortable" | "compact";
   footer: "standard" | "minimal";
+  sidebarWidth?: number;
 };
 
 const CONFIG_PATH = join(getAgentDir(), "pi-minimal-ui.json");
@@ -55,9 +57,11 @@ const DEFAULT_CONFIG: MinimalUiConfig = {
 function loadConfig(): MinimalUiConfig {
   try {
     const value = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<MinimalUiConfig>;
+    const sidebarWidth = parseSidebarWidth(value.sidebarWidth);
     return {
       density: value.density === "compact" ? "compact" : "comfortable",
       footer: value.footer === "minimal" ? "minimal" : "standard",
+      ...(sidebarWidth === undefined ? {} : { sidebarWidth }),
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -186,7 +190,7 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
   };
 
   const columnWidth = (width: number): number => {
-    return sidebar.splitActive ? width : mainColumnWidth(width);
+    return sidebar.splitActive ? width : mainColumnWidth(width, sidebar.preferredWidth);
   };
 
   const syncSidebar = (ctx: ExtensionContext): void => {
@@ -225,7 +229,18 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     sidebar.setCwd(ctx.cwd);
     sidebar.setSelectedPreview(undefined);
     sidebar.setTurnImpact(turnImpact.reset());
+    sidebar.setPreferredWidth(config.sidebarWidth);
     sidebar.setActions({
+      persistWidth: (columns) => {
+        const next = { ...config, sidebarWidth: columns };
+        try {
+          saveConfig(next);
+          config = next;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.ui.notify(`Could not save sidebar width: ${message}`, "error");
+        }
+      },
       copyPath: (filePath) => {
         void copyToClipboard(filePath).then(
           () => ctx.ui.notify("Copied file location", "info"),

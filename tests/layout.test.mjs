@@ -19,7 +19,11 @@ import {
   formatTokenRate,
   parseMcpConnectedCount,
   mainColumnWidth,
+  maxSidebarWidth,
   modelLabel,
+  parseSidebarWidth,
+  sidebarHandleColumn,
+  sidebarWidthFromScreenX,
   workspaceColumnWidth,
 } from "../extensions/pi-minimal-ui/layout.ts";
 import {
@@ -84,6 +88,22 @@ test("workspace column is 20% once the terminal is wide enough", () => {
   assert.equal(workspaceColumnWidth(200), 40);
   assert.equal(workspaceColumnWidth(203), 40);
   assert.equal(mainColumnWidth(200), 160);
+});
+
+test("a preferred sidebar width is clamped and hidden on narrow terminals", () => {
+  assert.equal(workspaceColumnWidth(59, 80), 0);
+  assert.equal(workspaceColumnWidth(100, 10), 28);
+  assert.equal(workspaceColumnWidth(100, 50), 50);
+  assert.equal(workspaceColumnWidth(60, 80), 28);
+  assert.equal(maxSidebarWidth(140), 108);
+  assert.equal(workspaceColumnWidth(140, 200), 108);
+  assert.equal(mainColumnWidth(140, 40), 100);
+  assert.equal(sidebarWidthFromScreenX(140, 100), 40);
+  assert.equal(sidebarWidthFromScreenX(140, 0), 108);
+  assert.equal(sidebarHandleColumn(140, 40), 100);
+  assert.equal(parseSidebarWidth(36.4), 36);
+  assert.equal(parseSidebarWidth(0), undefined);
+  assert.equal(parseSidebarWidth("40"), undefined);
 });
 
 test("sidebar rows pin the footer dock and give the rest to content", () => {
