@@ -19,6 +19,7 @@ export type WorkspaceView = {
   render(width: number, height: number): string[];
   invalidate(): void;
   handleClick?(x: number, y: number): boolean;
+  copyTextAt?(x: number, y: number): string | undefined;
   handleWheel?(delta: number): boolean;
 };
 

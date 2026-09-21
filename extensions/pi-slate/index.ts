@@ -337,6 +337,12 @@ export default function piSlate(pi: ExtensionAPI): void {
           () => ctx.ui.notify("Could not copy file location", "error"),
         );
       },
+      copyText: (text) => {
+        void copyToClipboard(text).then(
+          () => ctx.ui.notify("Copied", "info"),
+          () => ctx.ui.notify("Could not copy", "error"),
+        );
+      },
       openFile: (filePath) => {
         const target = resolve(ctx.cwd, filePath);
         const { command, args } = openExternalArgs(target);

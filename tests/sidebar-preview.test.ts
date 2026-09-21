@@ -18,7 +18,13 @@ function view(id: string): WorkspaceView {
 }
 
 function strip(line: string): string {
-  return line.replace(/\[(?!clear\])\w+\]/g, "").replace(/^│\s?/, "");
+  return line.replace(/\[(?!clear\]|copy(?: path)?\])\w+\]/g, "").replace(/^│\s?/, "");
+}
+
+function actionX(line: string, label: string): number {
+  const x = strip(line).indexOf(label);
+  assert.ok(x >= 0, `missing ${label}`);
+  return x + 2;
 }
 
 function mouse(partial: Partial<TuiMouseEvent> & Pick<TuiMouseEvent, "type" | "y">): TuiMouseEvent {
@@ -286,4 +292,95 @@ test("clicking a last-turn fact opens that list in Preview", () => {
   const heading = preview.findIndex((line) => line.includes("[clear]"));
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: heading, x: 38 })), { handled: true, render: true });
   assert.equal(sidebar.currentViewId(), undefined);
+});
+
+test("clicking preview [copy] copies the file path and leaves [clear] working", () => {
+  const sidebar = attachSidebar();
+  const copied: string[] = [];
+  sidebar.setActions({
+    copyPath: (filePath) => copied.push(filePath),
+    openFile() {},
+    selectFile() {},
+  });
+  sidebar.setSelectedPreview(new DiffWorkspaceView("src/a.ts", "diff", "+ok", theme(), "src/a.ts", "src/a.ts"));
+  const lines = sidebar.render(40);
+  const heading = lines.findIndex((line) => strip(line).includes("[copy]") && strip(line).includes("[clear]"));
+  assert.ok(heading >= 0);
+  assert.ok(strip(lines[heading] ?? "").includes("Preview · src/a.ts"));
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: heading, x: actionX(lines[heading] ?? "", "[copy]") })), {
+    handled: true,
+  });
+  assert.deepEqual(copied, ["src/a.ts"]);
+  assert.equal(sidebar.currentViewId(), "diff:src/a.ts:diff");
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: heading, x: actionX(lines[heading] ?? "", "[clear]") })), {
+    handled: true,
+    render: true,
+  });
+  assert.equal(sidebar.currentViewId(), undefined);
+});
+
+test("clicking image [copy path] copies the real filepath, not the placeholder", () => {
+  const sidebar = attachSidebar();
+  const copied: string[] = [];
+  sidebar.setActions({
+    copyPath: (filePath) => copied.push(filePath),
+    openFile() {},
+    selectFile() {},
+  });
+  const filePath = "/tmp/pi-clipboard-f2634509-b0a8-489a-85f7-ce9dc69b976a.png";
+  sidebar.setView({
+    id: `image:1:${filePath}`,
+    title: "shot.png",
+    filePath,
+    render: () => ["[image-1]"],
+    invalidate() {},
+  });
+  const lines = sidebar.render(40);
+  const heading = lines.findIndex((line) => strip(line).includes("[copy path]"));
+  assert.ok(heading >= 0);
+  assert.ok(strip(lines[heading] ?? "").includes("[clear]"));
+  assert.ok(!strip(lines[heading] ?? "").includes("[image-1]"));
+
+  assert.deepEqual(sidebar.handleMouse(mouse({
+    type: "click",
+    y: heading,
+    x: actionX(lines[heading] ?? "", "[copy path]"),
+  })), { handled: true });
+  assert.deepEqual(copied, [filePath]);
+});
+
+test("clicking an activity item [copy] copies that item and does not expand it", () => {
+  const sidebar = attachSidebar();
+  const copied: string[] = [];
+  sidebar.setActions({
+    copyPath() {},
+    copyText: (text) => copied.push(text),
+    openFile() {},
+    selectFile() {},
+  });
+  sidebar.setTurnImpact({
+    revision: 1,
+    toolsCalled: 1,
+    events: [{ id: "r1", toolName: "read", title: "read a.ts", detail: "full read", isError: false, pending: false }],
+  });
+  const summary = sidebar.render(40).map(strip);
+  const lastTurn = summary.indexOf("Last Turn");
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 1 })), { handled: true, render: true });
+
+  const lines = sidebar.render(40);
+  const labels = lines.map(strip);
+  const heading = labels.findIndex((line) => line.includes("Preview · activity"));
+  assert.ok(heading >= 0);
+  assert.ok(labels[heading]?.includes("[clear]"));
+  assert.ok(!labels[heading]?.includes("[copy]"));
+  const row = labels.findIndex((line) => line.includes("▸ read a.ts") && line.includes("[copy]"));
+  assert.ok(row >= 0);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: row, x: actionX(lines[row] ?? "", "[copy]") })), {
+    handled: true,
+  });
+  assert.deepEqual(copied, ["read a.ts\nfull read"]);
+  assert.match(strip(sidebar.render(40)[row] ?? ""), /▸ read a.ts/);
 });
