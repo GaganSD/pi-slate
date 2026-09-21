@@ -24,6 +24,7 @@ import { GitDiffPreviewLoader } from "./git-diff.ts";
 import { Sidebar } from "./sidebar.ts";
 import { DiffWorkspaceView } from "./workspace.ts";
 import { TurnImpactTracker } from "./turn-impact.ts";
+import { resolveContextTokens, sessionSpend } from "./context-usage.ts";
 import { estimateAssistantTokens, TokenRateTracker } from "./token-rate.ts";
 import { createWordPicker } from "./working-words.ts";
 import {
@@ -190,16 +191,20 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
   const syncSidebar = (ctx: ExtensionContext): void => {
     let tokens: number | null = null;
     let percent: number | null = null;
+    let spend = 0;
     try {
-      const usage = ctx.getContextUsage();
-      if (usage) {
-        tokens = usage.tokens;
-        percent = usage.percent;
-      }
+      const resolved = resolveContextTokens(
+        ctx.getContextUsage(),
+        ctx.sessionManager.buildContextEntries(),
+        ctx.model?.contextWindow,
+      );
+      tokens = resolved.tokens;
+      percent = resolved.percent;
+      spend = sessionSpend(ctx.sessionManager.getBranch());
     } catch {
       return;
     }
-    sidebar.setContext({ tokens, percent, tokensPerSec: tokenRate.rate() });
+    sidebar.setContext({ tokens, percent, tokensPerSec: tokenRate.rate(), spend });
     sidebar.setSkillsLoaded(countSkillCommands(pi.getCommands()));
   };
 

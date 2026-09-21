@@ -8,8 +8,8 @@ import {
   type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import {
-  formatContextResources,
-  formatContextTokens,
+  formatContextMeta,
+  formatContextUsage,
   SIDEBAR_EDITOR_RESERVE,
   SIDEBAR_MIN_TERMINAL_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -41,6 +41,7 @@ export type SidebarContextData = {
   tokens: number | null;
   percent: number | null;
   tokensPerSec: number;
+  spend: number;
 };
 
 export type SidebarActions = {
@@ -57,7 +58,7 @@ export class Sidebar implements Component {
   private transientView?: WorkspaceView;
   private turnImpact: TurnImpactSnapshot = emptyTurnImpact();
   private turnViews = new Map<TurnFilter, TurnLogView>();
-  private contextData: SidebarContextData = { tokens: null, percent: null, tokensPerSec: 0 };
+  private contextData: SidebarContextData = { tokens: null, percent: null, tokensPerSec: 0, spend: 0 };
   private lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0, impactStart: 0 };
   private mcpConnected: number | null = null;
   private skillsLoaded = 0;
@@ -132,6 +133,7 @@ export class Sidebar implements Component {
     if (
       this.contextData.tokens === data.tokens &&
       this.contextData.percent === data.percent &&
+      this.contextData.spend === data.spend &&
       displayedTokenRate(this.contextData.tokensPerSec) === displayedTokenRate(data.tokensPerSec)
     ) {
       return;
@@ -228,7 +230,7 @@ export class Sidebar implements Component {
       sidebarDockLines(),
     );
     const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}`;
-    const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${displayedTokenRate(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
+    const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${displayedTokenRate(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
       ? this.contentCached.lines
       : this.contentLines(width, contentHeight, theme);
@@ -262,20 +264,22 @@ export class Sidebar implements Component {
 
   private dockLines(width: number, height: number, theme: Theme | undefined): string[] {
     if (height < 1) return [];
-    const tokens = formatContextTokens(
+    const usage = formatContextUsage(
       this.contextData.tokens,
       this.contextData.percent,
-      this.contextData.tokensPerSec,
+      this.contextData.spend,
     );
-    const resources = formatContextResources(this.skillsLoaded, this.mcpConnected);
-    if (height === 1) return [theme ? this.body(tokens, width, theme, "muted") : tokens];
+    const meta = formatContextMeta(
+      this.contextData.tokensPerSec,
+      this.skillsLoaded,
+      this.mcpConnected,
+    );
+    if (height === 1) return [theme ? this.body(usage, width, theme, "muted") : usage];
 
-    const lines: string[] = [];
-    if (height >= 4 && theme) lines.push(this.rule(width, theme));
-    else if (height >= 4) lines.push("─".repeat(Math.max(0, width)));
-    lines.push(this.heading("Context", width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
+    const lines = [
+      theme ? this.body(usage, width, theme, "muted") : this.decorateLine(usage, width, theme),
+      theme ? this.body(meta, width, theme, "dim") : this.decorateLine(meta, width, theme),
+    ];
     while (lines.length < height) lines.push(this.decorateLine("", width, theme));
     return lines.slice(0, height);
   }

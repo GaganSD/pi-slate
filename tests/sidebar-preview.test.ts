@@ -130,6 +130,18 @@ test("summary leaves blank lines between its sections", () => {
   assert.equal(labels[lastTurn + 4], "0 subagents spawned");
 });
 
+test("context dock is two lines with spend", () => {
+  const sidebar = attachSidebar();
+  sidebar.setContext({ tokens: 18958, percent: 2.4, tokensPerSec: 42.4, spend: 1.234 });
+  sidebar.setSkillsLoaded(12);
+  sidebar.setMcpConnected(0);
+  const dock = sidebar.render(40).slice(-2).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
+  assert.deepEqual(dock, [
+    "18,958 tokens (2%) · $1.23",
+    "42/s · 12 skills · 0 MCPs",
+  ]);
+});
+
 test("clicking a last-turn fact opens that list in Preview", () => {
   const sidebar = attachSidebar();
   sidebar.setTurnImpact({
