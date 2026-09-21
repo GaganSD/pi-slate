@@ -55,10 +55,9 @@ export function formatSpend(cost: number | null | undefined): string {
 export function formatContextTokens(
   tokens: number | null | undefined,
   percent: number | null | undefined,
-  spend: number | null | undefined,
   rate: number | null | undefined,
 ): string {
-  return `${formatTokenCount(tokens)} (${formatPercent(percent)}) · ${formatSpend(spend)} · ${formatTokenRate(rate)}`;
+  return `${formatTokenCount(tokens)} (${formatPercent(percent)}) · ${formatTokenRate(rate)}`;
 }
 
 export const MCP_STATUS_EVENT = "pi-mcp-adapter/status/v1";
@@ -73,8 +72,12 @@ export function formatSkillsLoaded(count: number): string {
   return `${skills} skills loaded`;
 }
 
-export function formatContextResources(skills: number, mcpCount: number | null): string {
-  return `${formatSkillsLoaded(skills)} · ${formatMcpConnected(mcpCount ?? 0)}`;
+export function formatContextResources(
+  spend: number | null | undefined,
+  skills: number,
+  mcpCount: number | null,
+): string {
+  return `${formatSpend(spend)} · ${formatSkillsLoaded(skills)} · ${formatMcpConnected(mcpCount ?? 0)}`;
 }
 
 export function countSkillCommands(commands: readonly { source?: string; sourceInfo?: { path?: string }; name?: string }[]): number {

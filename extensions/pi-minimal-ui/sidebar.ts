@@ -299,10 +299,9 @@ export class Sidebar implements Component {
     const tokens = formatContextTokens(
       this.contextData.tokens,
       this.contextData.percent,
-      this.contextData.spend,
       this.contextData.tokensPerSec,
     );
-    const resources = formatContextResources(this.skillsLoaded, this.mcpConnected);
+    const resources = formatContextResources(this.contextData.spend, this.skillsLoaded, this.mcpConnected);
     if (height === 1) return [theme ? this.body(tokens, width, theme, "muted") : tokens];
 
     const lines: string[] = [];

@@ -70,8 +70,8 @@ test("sidebar context labels match the OpenCode-style facts", () => {
   assert.equal(formatPercent(null), "—%");
   assert.equal(formatSpend(1.234), "$1.23");
   assert.equal(formatSpend(null), "$0.00");
-  assert.equal(formatContextTokens(3485, 2.4, 1.234, 42.4), "3,485 tokens (2%) · $1.23 · 42 tokens/sec");
-  assert.equal(formatContextTokens(null, null, null, null), "— tokens (—%) · $0.00 · — tokens/sec");
+  assert.equal(formatContextTokens(3485, 2.4, 42.4), "3,485 tokens (2%) · 42 tokens/sec");
+  assert.equal(formatContextTokens(null, null, null), "— tokens (—%) · — tokens/sec");
 });
 
 test("model label stays safe with missing data", () => {
@@ -101,8 +101,8 @@ test("MCP and skill counts share the Context resource line", () => {
   assert.equal(formatMcpConnected(2), "2 MCPs connected");
   assert.equal(formatSkillsLoaded(0), "0 skills loaded");
   assert.equal(formatSkillsLoaded(3), "3 skills loaded");
-  assert.equal(formatContextResources(3, 2), "3 skills loaded · 2 MCPs connected");
-  assert.equal(formatContextResources(0, null), "0 skills loaded · 0 MCPs connected");
+  assert.equal(formatContextResources(1.234, 3, 2), "$1.23 · 3 skills loaded · 2 MCPs connected");
+  assert.equal(formatContextResources(null, 0, null), "$0.00 · 0 skills loaded · 0 MCPs connected");
   assert.equal(countSkillCommands([
     { source: "skill", sourceInfo: { path: "/skills/a/SKILL.md" }, name: "a" },
     { source: "skill", sourceInfo: { path: "/skills/a/SKILL.md" }, name: "a:1" },
