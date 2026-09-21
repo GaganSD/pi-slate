@@ -20,7 +20,10 @@ import {
 import {
   FILES_WIDGET_MAX_LINES,
   filesWidgetDesiredHeight,
+  fitImageCells,
+  placeWorkspaceImage,
   sidebarDockLines,
+  workspacePaneSlots,
   sidebarRowSlots,
   splitContentSlot,
   splitSidebarContent,
@@ -133,4 +136,21 @@ test("content slot splits plan and peek evenly", () => {
   assert.deepEqual(splitContentSlot(2, 8, true), { planHeight: 1, peekHeight: 1, dividerHeight: 0 });
   assert.deepEqual(splitContentSlot(1, 8, true), { planHeight: 1, peekHeight: 0, dividerHeight: 0 });
   assert.deepEqual(splitContentSlot(0, 3, true), { planHeight: 0, peekHeight: 0, dividerHeight: 0 });
+});
+
+test("preview image cells fit inside the pane without upscaling", () => {
+  assert.deepEqual(workspacePaneSlots(0), { imageHeight: 0, captionHeight: 0 });
+  assert.deepEqual(workspacePaneSlots(1), { imageHeight: 0, captionHeight: 1 });
+  assert.deepEqual(workspacePaneSlots(8), { imageHeight: 7, captionHeight: 1 });
+  assert.deepEqual(fitImageCells(90, 180, 10, 10, 9, 18), { columns: 10, rows: 10 });
+  assert.deepEqual(fitImageCells(180, 360, 10, 10, 9, 18), { columns: 10, rows: 10 });
+  assert.deepEqual(fitImageCells(18, 18, 10, 10, 9, 18), { columns: 2, rows: 1 });
+});
+
+test("preview caption sits under the image block", () => {
+  const placed = placeWorkspaceImage(6, 3, ["Filename: shot.png"]);
+  assert.equal(placed.imageStart, 2);
+  assert.equal(placed.imageRows, 3);
+  assert.equal(placed.captionStart, 5);
+  assert.equal(placed.lines[5], "Filename: shot.png");
 });
