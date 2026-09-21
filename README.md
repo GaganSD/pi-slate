@@ -2,7 +2,7 @@
 
 A minimal terminal UI/UX for [Pi](https://pi.dev), with a customizable sidebar that keeps your work in view. 
 
-<img width="1911" height="1035" alt="image" src="https://github.com/user-attachments/assets/bc502be2-8561-470f-abc1-2832830473b1" />
+![Slate session with sidebar preview](assets/slate-overview.png)
 
 ## Setup
 
