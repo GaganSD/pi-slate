@@ -142,6 +142,8 @@ test("clicking a last-turn fact opens that list in Preview", () => {
   });
   const labels = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
   const lastTurn = labels.indexOf("Last Turn");
+  assert.equal(sidebar.handleMouse(mouse({ type: "move", y: lastTurn + 1 })), undefined);
+  assert.equal(sidebar.currentViewId(), undefined);
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 1 })), { handled: true, render: true });
   assert.equal(sidebar.currentViewId(), "turn:read");
   const preview = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "")).join("\n");

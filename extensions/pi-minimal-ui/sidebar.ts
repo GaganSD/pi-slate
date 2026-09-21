@@ -184,14 +184,9 @@ export class Sidebar implements Component {
     const filters = turnFilters();
     const impactIndex = event.y - impactStart;
     const overImpact = impactStart > 0 && impactIndex >= 0 && impactIndex < filters.length;
-    if (overImpact && (event.type === "move" || event.type === "click")) {
-      const view = this.turnView(filters[impactIndex]!);
-      if (event.type === "click") this.setSelectedPreview(view);
-      else this.setView(view);
-      return { handled: true, render: true };
-    }
-    if (event.type === "move" && !overImpact && event.y < peekStart && this.transientView?.id.startsWith("turn:")) {
+    if (event.type === "click" && event.button === "left" && overImpact) {
       this.setView(undefined);
+      this.setSelectedPreview(this.turnView(filters[impactIndex]!));
       return { handled: true, render: true };
     }
     if (event.type === "wheel" && event.y >= filesStart && event.y < filesStart + filesHeight) {
