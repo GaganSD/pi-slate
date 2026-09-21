@@ -48,6 +48,7 @@ import {
   messageLengthMessage,
   slateArgumentCompletions,
   SLATE_USAGE,
+  SLATE_VERSION,
   SIDEBAR_PERCENT_DEFAULT,
   SIDEBAR_PERCENT_MEDIUM,
   SIDEBAR_PERCENT_NARROW,
@@ -585,7 +586,7 @@ export default function piSlate(pi: ExtensionAPI): void {
     const body = await ctx.ui.editor(
       "Issue details",
       issueTemplate({
-        slateVersion: "0.1.0",
+        slateVersion: SLATE_VERSION,
         piVersion: VERSION,
         platform: `${process.platform} ${process.arch}`,
       }),

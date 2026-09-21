@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 // The source SVG is a 4×4 square grid. Terminal cells are approximately twice
 // as tall as they are wide, so every source square occupies two columns.
 // Keep the empty fourth column on the first two rows. The header centers this
@@ -186,6 +188,9 @@ export function messageLengthMessage(value: number | "all" | undefined): string 
 export const SLATE_ISSUES_URL = "https://github.com/GaganSD/pi-slate/issues";
 export const SLATE_NEW_ISSUE_URL = `${SLATE_ISSUES_URL}/new`;
 export const SLATE_REPO = "GaganSD/pi-slate";
+export const SLATE_VERSION = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+).version as string;
 
 export const SLATE_USAGE =
   "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>] | message-length [default|all|<count>] | bug [file|open]";
