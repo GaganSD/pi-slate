@@ -1,7 +1,7 @@
 {
   "name": "pi-extensions",
   "version": "0.1.0",
-  "description": "A quiet, minimal Pi terminal UI: header, footer, sidebar, and theme.",
+  "description": "Quiet Pi TUI: header, footer, sidebar, and a muted dark theme.",
   "type": "module",
   "license": "MIT",
   "keywords": [
