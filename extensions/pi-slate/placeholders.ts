@@ -85,22 +85,6 @@ export function rewriteClipboardPaths(
   });
 }
 
-export function rewriteInsertedText(
-  inserted: string,
-  editorText: string,
-  store: ImagePathStore,
-): string {
-  CLIPBOARD_PATH_RE.lastIndex = 0;
-  if (!CLIPBOARD_PATH_RE.test(inserted)) return inserted;
-  return rewriteClipboardPaths(inserted, nextImageNumber(editorText), store);
-}
-
-export function displayImagePlaceholders(text: string): string {
-  CLIPBOARD_PATH_RE.lastIndex = 0;
-  if (!CLIPBOARD_PATH_RE.test(text)) return text;
-  return rewriteClipboardPaths(text, nextImageNumber(text), new Map());
-}
-
 export function transformSubmittedText(
   text: string,
   store: ImagePathStore,

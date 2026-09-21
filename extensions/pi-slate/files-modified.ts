@@ -42,10 +42,6 @@ export type FileMark = {
   tone: FileTone;
 };
 
-export function formatFileCode(change: FileChange): string {
-  return `${change.index}${change.worktree}`;
-}
-
 export function fileMark(change: FileChange): FileMark {
   const index = change.index;
   const worktree = change.worktree;

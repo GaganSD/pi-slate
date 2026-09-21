@@ -7,7 +7,7 @@ import {
   formatResult,
   formatTurnImpact,
   TurnImpactTracker,
-} from "../extensions/pi-minimal-ui/turn-impact.ts";
+} from "../extensions/pi-slate/turn-impact.ts";
 
 test("turn impact counts tools, shells, reads, and subagents", () => {
   const impact = new TurnImpactTracker();

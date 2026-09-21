@@ -1,10 +1,6 @@
 export const TOKEN_RATE_WINDOW_MS = 5000;
 export const TOKEN_RATE_MIN_ELAPSED_MS = 250;
 
-export function displayedTokenRate(rate: number): number {
-  return Number.isFinite(rate) ? Math.round(Math.max(0, rate)) : 0;
-}
-
 export type AssistantContentBlock = {
   type?: string;
   text?: string;

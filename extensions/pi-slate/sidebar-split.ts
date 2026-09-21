@@ -7,36 +7,40 @@ import {
   type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import {
-  SIDEBAR_MIN_TERMINAL_WIDTH,
   SIDEBAR_MIN_WIDTH,
   workspaceColumnWidth,
 } from "./layout.ts";
-import { bindSplitHost } from "./split-host.ts";
 
-const SIDEBAR_SPLIT = Symbol.for("pi-minimal-ui.sidebar-split");
+const SIDEBAR_SPLIT = Symbol.for("pi-slate.sidebar-split");
+const ORIGINAL_SET_LAYOUT_ROOT = Symbol.for("pi-slate.setLayoutRoot");
+const SPLIT_OWNER = Symbol.for("pi-slate.sidebar-split-owner");
 
-class SidebarGutter implements Component {
-  private readonly pane: Component;
+type SplitHost<T> = {
+  layoutRoot?: T;
+  setLayoutRoot(component: T | undefined): void;
+  [ORIGINAL_SET_LAYOUT_ROOT]?: (component: T | undefined) => void;
+  [SPLIT_OWNER]?: object;
+};
 
-  constructor(pane: Component) {
-    this.pane = pane;
-  }
+export function bindSplitHost<T>(
+  host: SplitHost<T>,
+  wrap: (component: T | undefined) => T | undefined,
+  unwrap: (component: T | undefined) => T | undefined,
+): () => void {
+  const originalSet = host[ORIGINAL_SET_LAYOUT_ROOT] ?? host.setLayoutRoot.bind(host);
+  const owner = {};
+  host[ORIGINAL_SET_LAYOUT_ROOT] = originalSet;
+  host[SPLIT_OWNER] = owner;
+  host.setLayoutRoot = (component) => originalSet(wrap(component));
+  if (host.layoutRoot !== undefined) originalSet(wrap(host.layoutRoot));
 
-  invalidate(): void {
-    this.pane.invalidate();
-  }
-
-  render(width: number): string[] {
-    return this.pane.render(width);
-  }
-
-  handleInput?(data: string): void {
-    this.pane.handleInput?.(data);
-  }
-
-  handleMouse?(event: TuiMouseEvent) {
-    return this.pane.handleMouse?.(event);
-  }
+  return () => {
+    if (host[SPLIT_OWNER] !== owner) return;
+    host.setLayoutRoot = originalSet;
+    delete host[ORIGINAL_SET_LAYOUT_ROOT];
+    delete host[SPLIT_OWNER];
+    originalSet(unwrap(host.layoutRoot));
+  };
 }
 
 type SplitMousePane = Component & {
@@ -71,7 +75,7 @@ class SidebarSplit extends HStack {
       // Skip full-width intrinsic measurement: switching widths thrashes leaf render caches.
       { component: chat, basis: 0, grow: 1, shrink: 1, minSize: 1 },
       {
-        component: new SidebarGutter(pane),
+        component: pane,
         grow: 0,
         shrink: 0,
         minSize: SIDEBAR_MIN_WIDTH,
@@ -114,8 +118,4 @@ export function installSidebarSplit(
     },
     splitChat,
   );
-}
-
-export function sidebarVisible(totalWidth: number): boolean {
-  return totalWidth >= SIDEBAR_MIN_TERMINAL_WIDTH;
 }

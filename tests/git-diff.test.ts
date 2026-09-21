@@ -10,8 +10,8 @@ import {
   repoRelativePath,
   type GitDiffResult,
   type GitDiffRunner,
-} from "../extensions/pi-minimal-ui/git-diff.ts";
-import type { FileChange } from "../extensions/pi-minimal-ui/files-modified.ts";
+} from "../extensions/pi-slate/git-diff.ts";
+import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
 
 function file(path: string, extra: Partial<FileChange> = {}): FileChange {
   return { index: " ", worktree: "M", path, ...extra };

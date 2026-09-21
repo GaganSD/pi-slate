@@ -114,7 +114,7 @@ export class ImageWorkspaceView implements WorkspaceView {
   render(width: number, height: number): string[] {
     const key = `${width}x${height}`;
     if (this.cached?.key === key) return this.cached.lines;
-    const { imageHeight } = workspacePaneSlots(height);
+    const imageHeight = workspacePaneSlots(height);
     if (imageHeight < 1) {
       const placed = placeWorkspaceImage(height, 0, []);
       this.cached = { key, lines: placed.lines };

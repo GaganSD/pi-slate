@@ -27,9 +27,11 @@ export function modelLabel(model: { id?: string; name?: string } | undefined): s
   return model.id || model.name || "unknown model";
 }
 
+const INTEGERS = new Intl.NumberFormat("en");
+
 export function formatInteger(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return INTEGERS.format(Math.round(value));
 }
 
 export function formatTokenCount(tokens: number | null | undefined): string {
@@ -112,12 +114,9 @@ export function centerOffset(viewportWidth: number, contentWidth: number): numbe
   return Math.max(0, Math.floor((viewportWidth - contentWidth) / 2));
 }
 
-export const WORKSPACE_MIN_TERMINAL_WIDTH = 60;
-export const WORKSPACE_MIN_WIDTH = 28;
-export const WORKSPACE_EDITOR_RESERVE = 5;
-export const SIDEBAR_MIN_TERMINAL_WIDTH = WORKSPACE_MIN_TERMINAL_WIDTH;
-export const SIDEBAR_MIN_WIDTH = WORKSPACE_MIN_WIDTH;
-export const SIDEBAR_EDITOR_RESERVE = WORKSPACE_EDITOR_RESERVE;
+export const SIDEBAR_MIN_TERMINAL_WIDTH = 60;
+export const SIDEBAR_MIN_WIDTH = 28;
+export const SIDEBAR_EDITOR_RESERVE = 5;
 export const SIDEBAR_DEFAULT_RATIO = 0.2;
 export const SIDEBAR_MAIN_MIN_WIDTH = SIDEBAR_MIN_TERMINAL_WIDTH - SIDEBAR_MIN_WIDTH;
 export const SIDEBAR_HANDLE_MAX_X = 1;
@@ -148,7 +147,7 @@ export function parseSidebarWidthArg(raw: string): { ok: true; width?: number } 
 }
 
 export function workspaceColumnWidth(totalWidth: number, preferred?: number): number {
-  if (totalWidth < WORKSPACE_MIN_TERMINAL_WIDTH) return 0;
+  if (totalWidth < SIDEBAR_MIN_TERMINAL_WIDTH) return 0;
   const fallback = Math.max(SIDEBAR_MIN_WIDTH, Math.floor(totalWidth * SIDEBAR_DEFAULT_RATIO));
   const desired = preferred ?? fallback;
   return Math.max(SIDEBAR_MIN_WIDTH, Math.min(maxSidebarWidth(totalWidth), desired));

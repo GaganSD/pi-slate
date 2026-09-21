@@ -10,9 +10,9 @@ import {
   type Terminal,
   type TuiMouseEvent,
 } from "@earendil-works/pi-tui";
-import { isSidebarResizeHandle, sidebarWidthFromScreenX, workspaceColumnWidth } from "../extensions/pi-minimal-ui/layout.ts";
-import { Sidebar } from "../extensions/pi-minimal-ui/sidebar.ts";
-import type { FileChange } from "../extensions/pi-minimal-ui/files-modified.ts";
+import { isSidebarResizeHandle, sidebarWidthFromScreenX, workspaceColumnWidth } from "../extensions/pi-slate/layout.ts";
+import { Sidebar } from "../extensions/pi-slate/sidebar.ts";
+import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
 
 function theme(): Theme {
   return {

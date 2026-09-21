@@ -25,8 +25,8 @@ import {
   type MarkdownTheme,
   type Terminal,
 } from "@earendil-works/pi-tui";
-import { installSidebarSplit } from "../extensions/pi-minimal-ui/sidebar-split.ts";
-import { workspaceColumnWidth } from "../extensions/pi-minimal-ui/layout.ts";
+import { installSidebarSplit } from "../extensions/pi-slate/sidebar-split.ts";
+import { workspaceColumnWidth } from "../extensions/pi-slate/layout.ts";
 
 const COLUMNS = Number(process.env.COLUMNS ?? 140);
 const ROWS = Number(process.env.ROWS ?? 50);

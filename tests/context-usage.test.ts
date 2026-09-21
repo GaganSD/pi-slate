@@ -5,7 +5,7 @@ import {
   estimateContextTokensFromEntries,
   resolveContextTokens,
   sessionSpend,
-} from "../extensions/pi-minimal-ui/context-usage.ts";
+} from "../extensions/pi-slate/context-usage.ts";
 
 function user(id: string, text: string): SessionEntry {
   return {

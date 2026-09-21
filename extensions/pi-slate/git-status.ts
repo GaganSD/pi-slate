@@ -5,14 +5,12 @@ export const GIT_STATUS_TIMEOUT_MS = 2000;
 
 export type GitPorcelainRunner = (cwd: string) => Promise<string>;
 
-export function createGitPorcelainRunner(
-  timeoutMs = GIT_STATUS_TIMEOUT_MS,
-): GitPorcelainRunner {
-  return (cwd) => new Promise((resolve, reject) => {
+function gitPorcelain(cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
     execFile(
       "git",
       ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-      { cwd, encoding: "utf8", timeout: timeoutMs, windowsHide: true, maxBuffer: 1024 * 1024 },
+      { cwd, encoding: "utf8", timeout: GIT_STATUS_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 },
       (error, stdout) => {
         if (!error) {
           resolve(typeof stdout === "string" ? stdout : "");
@@ -39,7 +37,7 @@ export class GitStatusPoller {
 
   constructor(
     onChange: (files: FileChange[]) => void,
-    run: GitPorcelainRunner = createGitPorcelainRunner(),
+    run: GitPorcelainRunner = gitPorcelain,
   ) {
     this.onChange = onChange;
     this.run = run;
