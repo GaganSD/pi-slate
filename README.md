@@ -24,7 +24,7 @@ For a project-local install, use `pi install -l git:github.com/GaganSD/pi-extens
 
 - Centered Pi header and compact footer.
 - A muted `pi-minimal` theme.
-- A right sidebar with a compact **Summary** (Files Changed and factual Last Turn impact), **Preview**, and **Context**.
+- A right sidebar with a compact **Summary** (Files Changed and Last Turn impact for the last prompt), **Preview**, and **Context**.
 - Files Changed reads local `git status` at startup and after Pi work; it does not poll while Pi is idle. Click a changed file to lazily load its read-only Git diff preview.
 - Image peek: put the cursor on an `[image-N]` attachment token to preview it in the sidebar. Image-capable terminals render the image; other terminals get a text fallback, and leaving the token restores a selected file diff.
 - `/minimal-ui` toggles comfortable/compact editor density and the standard/minimal footer. Preferences are stored in `~/.pi/agent/pi-minimal-ui.json`.

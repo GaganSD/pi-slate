@@ -94,10 +94,39 @@ test("clicking a changed file selects it instead of copying its path", () => {
   ]);
   sidebar.render(40);
 
-  const heading = sidebar.handleMouse(mouse({ type: "click", y: 1 }));
+  const heading = sidebar.handleMouse(mouse({ type: "click", y: 2 }));
   assert.equal(heading, undefined);
-  const first = sidebar.handleMouse(mouse({ type: "click", y: 2 }));
+  const first = sidebar.handleMouse(mouse({ type: "click", y: 3 }));
   assert.deepEqual(first, { handled: true });
   assert.equal(selected[0]?.path, "src/a.ts");
   assert.deepEqual(copied, []);
+});
+
+test("summary leaves blank lines between its sections", () => {
+  const sidebar = attachSidebar();
+  sidebar.setFiles([
+    { index: " ", worktree: "M", path: "src/a.ts" },
+    { index: "?", worktree: "?", path: "src/b.ts" },
+  ]);
+  sidebar.setTurnImpact({
+    revision: 1,
+    filesRead: 0,
+    filesModified: 0,
+    filesDeleted: 2,
+    shellCommands: 1,
+    testsPassed: 0,
+    testsFailed: 0,
+    testsUnknown: 0,
+  });
+  const labels = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
+  const summary = labels.indexOf("Summary");
+  const files = labels.indexOf("Files Changed · 2");
+  const lastTurn = labels.indexOf("Last Turn");
+  assert.ok(summary >= 0 && files === summary + 2);
+  assert.equal(labels[summary + 1], "");
+  assert.ok(lastTurn > files);
+  assert.equal(labels[lastTurn - 1], "");
+  assert.equal(labels[lastTurn + 1], "");
+  assert.match(labels[lastTurn + 2], /0 files read/);
+  assert.match(labels[lastTurn + 3], /2 files deleted/);
 });

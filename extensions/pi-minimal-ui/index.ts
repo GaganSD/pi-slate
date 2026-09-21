@@ -306,7 +306,8 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     if (event.message.role === "assistant") tokenRate.endMessage();
     syncSidebar(ctx);
   });
-  pi.on("turn_start", () => {
+  pi.on("before_agent_start", () => {
+    // Last Turn is the last user prompt, not each LLM round inside it.
     sidebar.setTurnImpact(turnImpact.reset());
   });
   pi.on("tool_call", (event) => {

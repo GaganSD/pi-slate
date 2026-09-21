@@ -54,9 +54,9 @@ export class Sidebar implements Component {
   private splitDispose?: () => void;
   private selectedView?: WorkspaceView;
   private transientView?: WorkspaceView;
-  private turnImpact: TurnImpactSnapshot = { revision: 0, filesRead: 0, filesModified: 0, shellCommands: 0, testsPassed: 0, testsFailed: 0, testsUnknown: 0 };
+  private turnImpact: TurnImpactSnapshot = { revision: 0, filesRead: 0, filesModified: 0, filesDeleted: 0, shellCommands: 0, testsPassed: 0, testsFailed: 0, testsUnknown: 0 };
   private contextData: SidebarContextData = { tokens: null, percent: null, tokensPerSec: 0 };
-  private lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0 };
+  private lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0 };
   private mcpConnected: number | null = null;
   private skillsLoaded = 0;
   private files: FileChange[] = [];
@@ -176,8 +176,7 @@ export class Sidebar implements Component {
   }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    const { summaryHeight, filesHeight, dividerHeight, peekHeight } = this.lastSlots;
-    const filesStart = summaryHeight > 0 ? 1 : 0;
+    const { summaryHeight, filesHeight, dividerHeight, peekHeight, filesStart } = this.lastSlots;
     const peekStart = summaryHeight + dividerHeight;
     if (event.type === "wheel" && event.y >= filesStart && event.y < filesStart + filesHeight) {
       if (!this.scrollFiles(-(event.wheelDelta ?? 0))) return undefined;
@@ -238,7 +237,7 @@ export class Sidebar implements Component {
     this.cwd = "";
     this.contentCached = undefined;
     this.dockCached = undefined;
-    this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0 };
+    this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0 };
     this.tui = undefined;
     this.theme = undefined;
   }
@@ -265,10 +264,11 @@ export class Sidebar implements Component {
 
   private contentLines(width: number, height: number, theme: Theme | undefined): string[] {
     if (height < 1) {
-      this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0 };
+      this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0 };
       return [];
     }
-    const slots = this.lastSlots = splitSidebarContent(height, filesWidgetDesiredHeight(this.files.length));
+    const slots = splitSidebarContent(height, filesWidgetDesiredHeight(this.files.length));
+    this.lastSlots = { ...slots, filesStart: 0 };
     const lines: string[] = [...this.summaryLines(width, slots.summaryHeight, slots.filesHeight, theme)];
     this.pushRule(lines, slots.dividerHeight, width, theme);
     lines.push(...this.peekLines(width, slots.peekHeight, theme));
@@ -277,13 +277,20 @@ export class Sidebar implements Component {
 
   private summaryLines(width: number, height: number, filesHeight: number, theme: Theme | undefined): string[] {
     if (height < 1) return [];
+    const empty = this.decorateLine("", width, theme);
+    const files = this.filesLines(width, filesHeight, theme);
+    const impact = formatTurnImpact(this.turnImpact).map((line) => this.body(line, width, theme, "muted"));
+    const extra = Math.max(0, height - (1 + files.length + 1 + impact.length));
     const lines = [this.heading("Summary", width, theme)];
-    lines.push(...this.filesLines(width, filesHeight, theme));
-    const impact = formatTurnImpact(this.turnImpact);
+    if (extra > 0) lines.push(empty);
+    this.lastSlots = { ...this.lastSlots, filesStart: lines.length };
+    lines.push(...files);
+    if (extra > 1) lines.push(empty);
     if (lines.length < height) lines.push(this.heading("Last Turn", width, theme));
+    if (extra > 2) lines.push(empty);
     for (const line of impact) {
       if (lines.length >= height) break;
-      lines.push(this.body(line, width, theme, "muted"));
+      lines.push(line);
     }
     return this.padBlock(lines, height, width, theme);
   }

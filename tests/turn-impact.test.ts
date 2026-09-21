@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  deletedPathsFromCommand,
   formatTurnImpact,
   isTestCommand,
   TurnImpactTracker,
@@ -29,6 +30,7 @@ test("turn impact counts distinct successful reads and writes", () => {
     revision: 5,
     filesRead: 0,
     filesModified: 0,
+    filesDeleted: 0,
     shellCommands: 0,
     testsPassed: 0,
     testsFailed: 0,
@@ -59,12 +61,47 @@ test("turn impact counts shells and resolves test pass/fail", () => {
   assert.equal(impact.snapshot().testsUnknown, 0);
 });
 
+test("bash deletions count after a successful tool end", () => {
+  const impact = new TurnImpactTracker();
+  impact.toolCall({ toolCallId: "d1", toolName: "bash", input: { command: "rm -rf missions/a.json missions/b.json" } });
+  impact.toolCall({ toolCallId: "d2", toolName: "bash", input: { command: "git rm old.ts" } });
+  assert.equal(impact.snapshot().filesDeleted, 0);
+  assert.equal(impact.snapshot().shellCommands, 2);
+  impact.toolEnd({ toolCallId: "d1", isError: false });
+  impact.toolEnd({ toolCallId: "d2", isError: true });
+  assert.equal(impact.snapshot().filesDeleted, 2);
+  assert.equal(impact.snapshot().filesModified, 0);
+});
+
+test("later LLM rounds keep last-prompt impact until reset", () => {
+  const impact = new TurnImpactTracker();
+  impact.toolCall({ toolCallId: "s1", toolName: "bash", input: { command: "rm gone.ts" } });
+  impact.toolEnd({ toolCallId: "s1", isError: false });
+  impact.toolCall({ toolCallId: "r1", toolName: "read", input: { path: "a.ts" } });
+  impact.toolEnd({ toolCallId: "r1", isError: false });
+  assert.equal(impact.snapshot().filesDeleted, 1);
+  assert.equal(impact.snapshot().filesRead, 1);
+  assert.equal(impact.snapshot().shellCommands, 1);
+});
+
+test("deletedPathsFromCommand reads rm/git rm args and ignores other commands", () => {
+  assert.deepEqual(deletedPathsFromCommand("rm -rf missions/a.json missions/b.json"), [
+    "missions/a.json",
+    "missions/b.json",
+  ]);
+  assert.deepEqual(deletedPathsFromCommand("sudo git rm old.ts"), ["old.ts"]);
+  assert.deepEqual(deletedPathsFromCommand("ls && rm gone.ts"), ["gone.ts"]);
+  assert.deepEqual(deletedPathsFromCommand("rm"), ["(deleted)"]);
+  assert.deepEqual(deletedPathsFromCommand("ls missions"), []);
+});
+
 test("reset clears the current turn and keeps moving the revision", () => {
   const impact = new TurnImpactTracker();
   impact.toolCall({ toolCallId: "r1", toolName: "read", input: { path: "a.ts" } });
   impact.toolEnd({ toolCallId: "r1", isError: false });
   const afterReset = impact.reset();
   assert.equal(afterReset.filesRead, 0);
+  assert.equal(afterReset.filesDeleted, 0);
   assert.equal(afterReset.shellCommands, 0);
   assert.ok(afterReset.revision > 0);
 });
@@ -74,6 +111,7 @@ test("formatTurnImpact prints compact factual lines", () => {
     revision: 1,
     filesRead: 0,
     filesModified: 0,
+    filesDeleted: 0,
     shellCommands: 0,
     testsPassed: 0,
     testsFailed: 0,
@@ -86,12 +124,14 @@ test("formatTurnImpact prints compact factual lines", () => {
     revision: 2,
     filesRead: 1,
     filesModified: 2,
+    filesDeleted: 3,
     shellCommands: 1,
     testsPassed: 1,
     testsFailed: 2,
     testsUnknown: 1,
   }), [
     "1 file read · 2 files modified",
+    "3 files deleted",
     "1 shell command",
     "1 test passed · 2 tests failed · 1 test running/unknown",
   ]);
