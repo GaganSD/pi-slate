@@ -150,8 +150,45 @@ export function parseSidebarWidthArg(raw: string): { ok: true; percent?: number 
     : { ok: true, percent: Number(value) };
 }
 
+export const MESSAGE_LENGTH_DEFAULT = 100;
+export const MESSAGE_LENGTH_MIN = 1;
+export const MESSAGE_LENGTH_MAX = 2000;
+export const MESSAGE_LENGTH_SHORT = 50;
+export const MESSAGE_LENGTH_LONG = 200;
+
+export function parseMessageLength(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const length = Math.round(value);
+  if (length < MESSAGE_LENGTH_MIN || length > MESSAGE_LENGTH_MAX) return undefined;
+  return length;
+}
+
+export function parseMessageLengthArg(raw: string): { ok: true; value?: number | "all" } | { ok: false } {
+  const value = raw.trim().toLowerCase();
+  if (value === "default") return { ok: true };
+  if (value === "all" || value === "unlimited") return { ok: true, value: "all" };
+  if (!/^\d+$/.test(value)) return { ok: false };
+  const parsed = parseMessageLength(Number(value));
+  return parsed === undefined ? { ok: false } : { ok: true, value: parsed };
+}
+
+export function resolveMessageLength(value: number | "all" | undefined): number {
+  if (value === "all") return Number.POSITIVE_INFINITY;
+  return value ?? MESSAGE_LENGTH_DEFAULT;
+}
+
+export function messageLengthMessage(value: number | "all" | undefined): string {
+  if (value === "all") return "Message length set to all";
+  if (value === undefined) return "Message length reset to default";
+  return `Message length set to ${value}`;
+}
+
+export const SLATE_ISSUES_URL = "https://github.com/GaganSD/pi-slate/issues";
+export const SLATE_NEW_ISSUE_URL = `${SLATE_ISSUES_URL}/new`;
+export const SLATE_REPO = "GaganSD/pi-slate";
+
 export const SLATE_USAGE =
-  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>]";
+  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>] | message-length [default|all|<count>] | bug [file|open]";
 
 export function withCurrent(label: string, current: boolean): string {
   return current ? `${label} (current)` : label;
@@ -173,6 +210,12 @@ const SLATE_COMPLETIONS = [
   "width narrow",
   "width medium",
   "width wide",
+  "message-length",
+  "message-length default",
+  "message-length all",
+  "bug",
+  "bug file",
+  "bug open",
 ];
 
 export type SlateArgs =
@@ -181,6 +224,10 @@ export type SlateArgs =
   | { ok: true; kind: "footer"; value?: "standard" | "minimal" }
   | { ok: true; kind: "width-menu" }
   | { ok: true; kind: "width"; width?: number }
+  | { ok: true; kind: "message-length-menu" }
+  | { ok: true; kind: "message-length"; value?: number | "all" }
+  | { ok: true; kind: "bug-menu" }
+  | { ok: true; kind: "bug"; action: "file" | "open" }
   | { ok: false };
 
 export function parseSlateArgs(raw: string): SlateArgs {
@@ -205,6 +252,19 @@ export function parseSlateArgs(raw: string): SlateArgs {
     return parsed.percent === undefined
       ? { ok: true, kind: "width" }
       : { ok: true, kind: "width", width: parsed.percent };
+  }
+  if (head === "message-length") {
+    if (!tail) return { ok: true, kind: "message-length-menu" };
+    const parsed = parseMessageLengthArg(tail);
+    if (!parsed.ok) return { ok: false };
+    return parsed.value === undefined
+      ? { ok: true, kind: "message-length" }
+      : { ok: true, kind: "message-length", value: parsed.value };
+  }
+  if (head === "bug") {
+    if (!tail) return { ok: true, kind: "bug-menu" };
+    if (tail === "file" || tail === "open") return { ok: true, kind: "bug", action: tail };
+    return { ok: false };
   }
   return { ok: false };
 }

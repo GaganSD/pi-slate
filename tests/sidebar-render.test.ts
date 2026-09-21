@@ -13,7 +13,7 @@ import {
   type Terminal,
 } from "@earendil-works/pi-tui";
 import { installSidebarSplit } from "../extensions/pi-slate/sidebar-split.ts";
-import { mainColumnWidth, workspaceColumnWidth } from "../extensions/pi-slate/layout.ts";
+import { MESSAGE_LENGTH_DEFAULT, mainColumnWidth, workspaceColumnWidth } from "../extensions/pi-slate/layout.ts";
 
 const identity = (text: string) => text;
 const theme: MarkdownTheme = {
@@ -43,7 +43,7 @@ class NullTerminal implements Terminal {
 
 function fixture(
   t: TestContext,
-  count = 100,
+  count = MESSAGE_LENGTH_DEFAULT,
   scrollbar: "auto" | "always" | "hidden" = "auto",
   preferred?: { value?: number },
 ) {
@@ -115,8 +115,8 @@ function fixture(
 
 for (const scrollbar of ["auto", "always", "hidden"] as const) {
   test(`sidebar preserves warm caches during redraws, typing and scrolling (${scrollbar} scrollbar)`, (t) => {
-    const f = fixture(t, 100, scrollbar);
-    assert.deepEqual(f.reformats, Array(100).fill(1), "Cold frame formats each Markdown only once");
+    const f = fixture(t, MESSAGE_LENGTH_DEFAULT, scrollbar);
+    assert.deepEqual(f.reformats, Array(MESSAGE_LENGTH_DEFAULT).fill(1), "Cold frame formats each Markdown only once");
     assert.equal(f.widths.size, 1, "One allocated width, not full-width then pane-width");
     f.reset();
     for (let i = 0; i < 3; i++) f.tui.renderNow();
@@ -142,7 +142,7 @@ test("streaming reformats only the active Markdown and preserves manual scroll p
   f.reset();
   f.messages.at(-1)!.setText("Updated streaming **message**\n".repeat(40));
   f.tui.renderNow();
-  assert.deepEqual(f.reformats, [...Array(99).fill(0), 1]);
+  assert.deepEqual(f.reformats, [...Array(MESSAGE_LENGTH_DEFAULT - 1).fill(0), 1]);
   assert.equal(f.scroll.scrollTop, position);
   assert.equal(f.scroll.isFollowingEnd, false);
   f.reset();
@@ -153,7 +153,7 @@ test("streaming reformats only the active Markdown and preserves manual scroll p
   f.assertFrame();
 });
 
-for (const count of [0, 1, 100]) {
+for (const count of [0, 1, MESSAGE_LENGTH_DEFAULT]) {
   test(`sidebar resizes and crosses its visibility threshold without cache thrashing (${count} messages)`, (t) => {
     const f = fixture(t, count);
     for (const columns of [59, 60, 61, 80, 140, 200, 59]) {
