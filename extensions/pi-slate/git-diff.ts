@@ -8,12 +8,12 @@ export type GitDiffRunner = (cwd: string, argv: string[]) => Promise<GitDiffRunR
 export type GitDiffResult = { state: "diff" | "empty" | "error"; text: string };
 export type DiffLineKind = "added" | "removed" | "hunk" | "header" | "context";
 
-export function createGitDiffRunner(timeoutMs = GIT_DIFF_TIMEOUT_MS): GitDiffRunner {
-  return (cwd, argv) => new Promise((resolveResult, reject) => {
+function gitDiff(cwd: string, argv: string[]): Promise<GitDiffRunResult> {
+  return new Promise((resolveResult, reject) => {
     execFile(
       "git",
       argv,
-      { cwd, encoding: "utf8", timeout: timeoutMs, windowsHide: true, maxBuffer: 1024 * 1024 },
+      { cwd, encoding: "utf8", timeout: GIT_DIFF_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 },
       (error, stdout) => {
         const text = typeof stdout === "string" ? stdout : "";
         // git diff --no-index returns 1 whenever it found a difference.
@@ -83,7 +83,7 @@ export function gitDiffArgs(cwd: string, change: FileChange): string[] | undefin
 export async function loadGitDiff(
   cwd: string,
   change: FileChange,
-  run: GitDiffRunner = createGitDiffRunner(),
+  run: GitDiffRunner = gitDiff,
 ): Promise<GitDiffResult> {
   const argv = gitDiffArgs(cwd, change);
   if (!argv) return { state: "error", text: "Preview unavailable: file path is outside this workspace." };
@@ -111,7 +111,7 @@ export class GitDiffPreviewLoader {
   private inflight = new Map<string, Promise<GitDiffResult>>();
   private readonly run: GitDiffRunner;
 
-  constructor(run: GitDiffRunner = createGitDiffRunner()) {
+  constructor(run: GitDiffRunner = gitDiff) {
     this.run = run;
   }
 
