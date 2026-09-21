@@ -39,17 +39,23 @@ import {
   mainColumnWidth,
   modelLabel,
   parseMcpConnectedCount,
-  parseSidebarWidth,
+  parseSidebarPercent,
   parseSidebarWidthArg,
-  SIDEBAR_WIDTH_MEDIUM,
-  SIDEBAR_WIDTH_NARROW,
-  SIDEBAR_WIDTH_WIDE,
+  parseSlateArgs,
+  slateArgumentCompletions,
+  SLATE_USAGE,
+  SIDEBAR_PERCENT_DEFAULT,
+  SIDEBAR_PERCENT_MEDIUM,
+  SIDEBAR_PERCENT_NARROW,
+  SIDEBAR_PERCENT_WIDE,
+  withCurrent,
+  withoutCurrent,
 } from "./layout.ts";
 
 type SlateConfig = {
   density: "comfortable" | "compact";
   footer: "standard" | "minimal";
-  sidebarWidth?: number;
+  sidebarPercent?: number;
 };
 
 const CONFIG_PATH = join(getAgentDir(), "pi-slate.json");
@@ -61,11 +67,11 @@ const DEFAULT_CONFIG: SlateConfig = {
 function loadConfig(): SlateConfig {
   try {
     const value = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<SlateConfig>;
-    const sidebarWidth = parseSidebarWidth(value.sidebarWidth);
+    const sidebarPercent = parseSidebarPercent(value.sidebarPercent);
     return {
       density: value.density === "compact" ? "compact" : "comfortable",
       footer: value.footer === "minimal" ? "minimal" : "standard",
-      ...(sidebarWidth === undefined ? {} : { sidebarWidth }),
+      ...(sidebarPercent === undefined ? {} : { sidebarPercent }),
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -78,11 +84,17 @@ function saveConfig(config: SlateConfig): void {
   renameSync(temporaryPath, CONFIG_PATH);
 }
 
-function withSidebarWidth(current: SlateConfig, columns: number | undefined): SlateConfig {
+function withSidebarPercent(current: SlateConfig, percent: number | undefined): SlateConfig {
   const next = { ...current };
-  if (columns === undefined) delete next.sidebarWidth;
-  else next.sidebarWidth = columns;
+  if (percent === undefined) delete next.sidebarPercent;
+  else next.sidebarPercent = percent;
   return next;
+}
+
+function widthMessage(percent: number | undefined): string {
+  if (percent === undefined) return "Sidebar width reset to default";
+  if (percent === SIDEBAR_PERCENT_NARROW) return "Sidebar width set to minimum";
+  return `Sidebar width set to ${percent}%`;
 }
 
 function centeredLine(content: string, width: number): string {
@@ -240,11 +252,11 @@ export default function piSlate(pi: ExtensionAPI): void {
     sidebar.setCwd(ctx.cwd);
     sidebar.setSelectedPreview(undefined);
     sidebar.setTurnImpact(turnImpact.reset());
-    sidebar.setPreferredWidth(config.sidebarWidth);
+    sidebar.setPreferredWidth(config.sidebarPercent);
     sidebar.setActions({
-      persistWidth: (columns) => {
+      persistWidth: (percent) => {
         try {
-          const next = withSidebarWidth(config, columns);
+          const next = withSidebarPercent(config, percent);
           saveConfig(next);
           config = next;
         } catch (error) {
@@ -391,75 +403,123 @@ export default function piSlate(pi: ExtensionAPI): void {
     requestRender = () => {};
   });
 
-  pi.registerCommand("sidebar-width", {
-    description: "Set the sidebar width, or reset to the default 20%",
-    handler: async (args, ctx) => {
-      let width: number | undefined;
-      if (args.trim()) {
-        const parsed = parseSidebarWidthArg(args);
-        if (!parsed.ok) {
-          ctx.ui.notify("Usage: /sidebar-width [default|narrow|medium|wide|<columns>]", "error");
-          return;
-        }
-        width = parsed.width;
-      } else {
-        const choice = await ctx.ui.select("Sidebar width", [
-          "Default (20%)",
-          `Narrow (${SIDEBAR_WIDTH_NARROW})`,
-          `Medium (${SIDEBAR_WIDTH_MEDIUM})`,
-          `Wide (${SIDEBAR_WIDTH_WIDE})`,
-        ]);
-        if (!choice) return;
-        if (choice.startsWith("Default")) width = undefined;
-        else if (choice.startsWith("Narrow")) width = SIDEBAR_WIDTH_NARROW;
-        else if (choice.startsWith("Medium")) width = SIDEBAR_WIDTH_MEDIUM;
-        else width = SIDEBAR_WIDTH_WIDE;
-      }
+  const apply = (next: SlateConfig, message: string, ctx: ExtensionContext): void => {
+    try {
+      saveConfig(next);
+      config = next;
+      sidebar.setPreferredWidth(config.sidebarPercent);
+      activeEditor?.setPaddingX(config.density === "compact" ? 0 : 1);
+      requestRender();
+      ctx.ui.notify(message, "info");
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`Could not save Slate settings: ${messageText}`, "error");
+    }
+  };
 
-      try {
-        const next = withSidebarWidth(config, width);
-        saveConfig(next);
-        config = next;
-        sidebar.setPreferredWidth(width);
-        requestRender();
-        ctx.ui.notify(
-          width === undefined ? "Sidebar width reset to default" : `Sidebar width set to ${width}`,
-          "info",
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Could not save sidebar width: ${message}`, "error");
-      }
-    },
-  });
+  const pickDensity = async (ctx: ExtensionContext): Promise<SlateConfig["density"] | undefined> => {
+    const value = await ctx.ui.select("Density", [
+      withCurrent("Comfortable", config.density === "comfortable"),
+      withCurrent("Compact", config.density === "compact"),
+    ]);
+    const key = value ? withoutCurrent(value) : undefined;
+    if (key === "Comfortable") return "comfortable";
+    if (key === "Compact") return "compact";
+    return undefined;
+  };
+
+  const pickFooter = async (ctx: ExtensionContext): Promise<SlateConfig["footer"] | undefined> => {
+    const value = await ctx.ui.select("Footer", [
+      withCurrent("Standard", config.footer === "standard"),
+      withCurrent("Minimal", config.footer === "minimal"),
+    ]);
+    const key = value ? withoutCurrent(value) : undefined;
+    if (key === "Standard") return "standard";
+    if (key === "Minimal") return "minimal";
+    return undefined;
+  };
+
+  const pickWidth = async (ctx: ExtensionContext): Promise<{ picked: true; width?: number } | undefined> => {
+    const percent = sidebar.preferredWidth ?? config.sidebarPercent;
+    const defaultLabel = "Default (20%)";
+    const narrowLabel = "Narrow (minimum)";
+    const mediumLabel = "Medium (30%)";
+    const wideLabel = "Wide (40%)";
+    const customLabel = percent !== undefined
+      && percent !== SIDEBAR_PERCENT_NARROW
+      && percent !== SIDEBAR_PERCENT_DEFAULT
+      && percent !== SIDEBAR_PERCENT_MEDIUM
+      && percent !== SIDEBAR_PERCENT_WIDE
+      ? `Custom (${percent}%)`
+      : "Custom…";
+    const choice = await ctx.ui.select("Sidebar width", [
+      withCurrent(defaultLabel, percent === undefined || percent === SIDEBAR_PERCENT_DEFAULT),
+      withCurrent(narrowLabel, percent === SIDEBAR_PERCENT_NARROW),
+      withCurrent(mediumLabel, percent === SIDEBAR_PERCENT_MEDIUM),
+      withCurrent(wideLabel, percent === SIDEBAR_PERCENT_WIDE),
+      withCurrent(customLabel, customLabel.startsWith("Custom (")),
+    ]);
+    if (!choice) return undefined;
+    const key = withoutCurrent(choice);
+    if (key === defaultLabel) return { picked: true };
+    if (key === narrowLabel) return { picked: true, width: SIDEBAR_PERCENT_NARROW };
+    if (key === mediumLabel) return { picked: true, width: SIDEBAR_PERCENT_MEDIUM };
+    if (key === wideLabel) return { picked: true, width: SIDEBAR_PERCENT_WIDE };
+    if (key !== customLabel) return undefined;
+    const typed = await ctx.ui.input(
+      "Sidebar percent",
+      percent !== undefined && percent > 0 ? String(percent) : "30",
+    );
+    if (!typed) return undefined;
+    const parsed = parseSidebarWidthArg(typed);
+    if (!parsed.ok || parsed.percent === undefined) {
+      ctx.ui.notify(SLATE_USAGE, "error");
+      return undefined;
+    }
+    return { picked: true, width: parsed.percent };
+  };
 
   pi.registerCommand("slate", {
-    description: "Configure the pi-slate appearance",
-    handler: async (_args, ctx) => {
-      const setting = await ctx.ui.select("Slate", ["Density", "Footer"]);
-      if (!setting) return;
-      let nextConfig = { ...config };
-
-      if (setting === "Density") {
-        const value = await ctx.ui.select("Density", ["Comfortable", "Compact"]);
-        if (!value) return;
-        nextConfig = { ...nextConfig, density: value.toLowerCase() as SlateConfig["density"] };
-      } else {
-        const value = await ctx.ui.select("Footer", ["Standard", "Minimal"]);
-        if (!value) return;
-        nextConfig = { ...nextConfig, footer: value.toLowerCase() as SlateConfig["footer"] };
+    description: "Density, footer, or sidebar width",
+    getArgumentCompletions: slateArgumentCompletions,
+    handler: async (args, ctx) => {
+      const parsed = parseSlateArgs(args);
+      if (!parsed.ok) {
+        ctx.ui.notify(SLATE_USAGE, "error");
+        return;
       }
 
-      try {
-        saveConfig(nextConfig);
-        config = nextConfig;
-        activeEditor?.setPaddingX(config.density === "compact" ? 0 : 1);
-        requestRender();
-        ctx.ui.notify("Slate updated", "info");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Could not save Slate settings: ${message}`, "error");
+      let kind = parsed.kind;
+      if (kind === "menu") {
+        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Sidebar width"]);
+        if (setting === "Density") kind = "density";
+        else if (setting === "Footer") kind = "footer";
+        else if (setting === "Sidebar width") kind = "width-menu";
+        else return;
       }
+
+      if (kind === "density") {
+        const density = (parsed.kind === "density" ? parsed.value : undefined) ?? await pickDensity(ctx);
+        if (!density) return;
+        apply({ ...config, density }, `Density set to ${density}`, ctx);
+        return;
+      }
+
+      if (kind === "footer") {
+        const footer = (parsed.kind === "footer" ? parsed.value : undefined) ?? await pickFooter(ctx);
+        if (!footer) return;
+        apply({ ...config, footer }, `Footer set to ${footer}`, ctx);
+        return;
+      }
+
+      if (parsed.kind === "width") {
+        apply(withSidebarPercent(config, parsed.width), widthMessage(parsed.width), ctx);
+        return;
+      }
+
+      const picked = await pickWidth(ctx);
+      if (!picked) return;
+      apply(withSidebarPercent(config, picked.width), widthMessage(picked.width), ctx);
     },
   });
 }

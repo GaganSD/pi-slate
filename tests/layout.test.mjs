@@ -21,13 +21,19 @@ import {
   mainColumnWidth,
   maxSidebarWidth,
   modelLabel,
-  parseSidebarWidth,
+  parseSidebarPercent,
   parseSidebarWidthArg,
+  parseSlateArgs,
+  percentFromColumns,
+  sidebarPercentFromColumns,
+  slateArgumentCompletions,
+  withCurrent,
+  withoutCurrent,
   sidebarHandleColumn,
   sidebarWidthFromScreenX,
-  SIDEBAR_WIDTH_MEDIUM,
-  SIDEBAR_WIDTH_NARROW,
-  SIDEBAR_WIDTH_WIDE,
+  SIDEBAR_PERCENT_MEDIUM,
+  SIDEBAR_PERCENT_NARROW,
+  SIDEBAR_PERCENT_WIDE,
   workspaceColumnWidth,
 } from "../extensions/pi-slate/layout.ts";
 import {
@@ -101,19 +107,56 @@ test("a preferred sidebar width is clamped and hidden on narrow terminals", () =
   assert.equal(workspaceColumnWidth(60, 80), 28);
   assert.equal(maxSidebarWidth(140), 108);
   assert.equal(workspaceColumnWidth(140, 200), 108);
-  assert.equal(mainColumnWidth(140, 40), 100);
+  assert.equal(workspaceColumnWidth(200, SIDEBAR_PERCENT_NARROW), 28);
+  assert.equal(workspaceColumnWidth(200, SIDEBAR_PERCENT_MEDIUM), 60);
+  assert.equal(workspaceColumnWidth(200, SIDEBAR_PERCENT_WIDE), 80);
+  assert.equal(mainColumnWidth(140, 40), 84);
   assert.equal(sidebarWidthFromScreenX(140, 100), 40);
   assert.equal(sidebarWidthFromScreenX(140, 0), 108);
   assert.equal(sidebarHandleColumn(140, 40), 100);
-  assert.equal(parseSidebarWidth(36.4), 36);
-  assert.equal(parseSidebarWidth(0), undefined);
-  assert.equal(parseSidebarWidth("40"), undefined);
+  assert.equal(percentFromColumns(140, 28), 20);
+  assert.equal(sidebarPercentFromColumns(140, 28), undefined);
+  assert.equal(sidebarPercentFromColumns(140, 42), 30);
+  assert.equal(sidebarPercentFromColumns(200, 28), 0);
+  assert.equal(sidebarPercentFromColumns(200, 60), 30);
+  assert.equal(sidebarPercentFromColumns(200, 47), 24);
+  assert.equal(parseSidebarPercent(36.4), 36);
+  assert.equal(parseSidebarPercent(0), 0);
+  assert.equal(parseSidebarPercent(81), undefined);
+  assert.equal(parseSidebarPercent("40"), undefined);
   assert.deepEqual(parseSidebarWidthArg("default"), { ok: true });
-  assert.deepEqual(parseSidebarWidthArg(" narrow "), { ok: true, width: SIDEBAR_WIDTH_NARROW });
-  assert.deepEqual(parseSidebarWidthArg("medium"), { ok: true, width: SIDEBAR_WIDTH_MEDIUM });
-  assert.deepEqual(parseSidebarWidthArg("wide"), { ok: true, width: SIDEBAR_WIDTH_WIDE });
-  assert.deepEqual(parseSidebarWidthArg("48"), { ok: true, width: 48 });
+  assert.deepEqual(parseSidebarWidthArg(" narrow "), { ok: true, percent: SIDEBAR_PERCENT_NARROW });
+  assert.deepEqual(parseSidebarWidthArg("medium"), { ok: true, percent: SIDEBAR_PERCENT_MEDIUM });
+  assert.deepEqual(parseSidebarWidthArg("wide"), { ok: true, percent: SIDEBAR_PERCENT_WIDE });
+  assert.deepEqual(parseSidebarWidthArg("30%"), { ok: true, percent: 30 });
+  assert.deepEqual(parseSidebarWidthArg("48"), { ok: true, percent: 48 });
+  assert.deepEqual(parseSidebarWidthArg("81"), { ok: false });
+  assert.deepEqual(parseSidebarWidthArg("1e3"), { ok: false });
+  assert.deepEqual(parseSidebarWidthArg("0x20"), { ok: false });
   assert.deepEqual(parseSidebarWidthArg("nope"), { ok: false });
+});
+
+test("/slate args route density, footer, and width", () => {
+  assert.deepEqual(parseSlateArgs(""), { ok: true, kind: "menu" });
+  assert.deepEqual(parseSlateArgs("density"), { ok: true, kind: "density" });
+  assert.deepEqual(parseSlateArgs("density compact"), { ok: true, kind: "density", value: "compact" });
+  assert.deepEqual(parseSlateArgs("footer minimal"), { ok: true, kind: "footer", value: "minimal" });
+  assert.deepEqual(parseSlateArgs("width"), { ok: true, kind: "width-menu" });
+  assert.deepEqual(parseSlateArgs("width default"), { ok: true, kind: "width" });
+  assert.deepEqual(parseSlateArgs("width 40"), { ok: true, kind: "width", width: 40 });
+  assert.deepEqual(parseSlateArgs("width 30%"), { ok: true, kind: "width", width: 30 });
+  assert.deepEqual(parseSlateArgs("width narrow"), { ok: true, kind: "width", width: 0 });
+  assert.deepEqual(parseSlateArgs("width nope"), { ok: false });
+  assert.deepEqual(parseSlateArgs("nope"), { ok: false });
+  assert.deepEqual(parseSlateArgs("density compact extra"), { ok: false });
+  assert.deepEqual(
+    slateArgumentCompletions("den"),
+    [{ value: "density", label: "density" }, { value: "density comfortable", label: "density comfortable" }, { value: "density compact", label: "density compact" }],
+  );
+  assert.equal(slateArgumentCompletions("nope"), null);
+  assert.equal(withCurrent("Compact", true), "Compact (current)");
+  assert.equal(withoutCurrent("Compact (current)"), "Compact");
+  assert.equal(withoutCurrent("Sidebar width"), "Sidebar width");
 });
 
 test("sidebar rows pin the footer dock and give the rest to content", () => {
