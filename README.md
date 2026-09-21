@@ -4,10 +4,10 @@ Public session radar for the [Pi](https://github.com/badlogic/pi-mono) coding ag
 
 1. **Files Changed · N** — `git status` porcelain (`N` / `M` / `D` / `R` / `U`). Scroll the list. Click a path to copy it.
 2. **Plan** — the `todo` tool tree, or `none`.
-3. **Preview** — empty in v1 (`none`). There is no preview publisher API.
+3. **Preview** — paste a clipboard image to insert `[image-N]`. Put the caret on that token (or click it) to preview the picture here. Click the filename to copy its path. Move the caret off the token to return to `none`.
 4. **Context** — tokens (percent) · tokens/sec, plus skills loaded and MCPs connected.
 
-It does not ship a theme, header, footer, editor, or image peek.
+It does not ship a theme, header, footer, or editor.
 
 ## Install
 
