@@ -51,7 +51,8 @@ export function workspacePaneSlots(height: number): {
   captionHeight: number;
 } {
   const paneHeight = Math.max(0, Math.floor(height));
-  return { imageHeight: paneHeight, captionHeight: 0 };
+  if (paneHeight <= 1) return { imageHeight: paneHeight, captionHeight: 0 };
+  return { imageHeight: paneHeight - 1, captionHeight: 0 };
 }
 
 export function fitImageCells(
@@ -83,9 +84,10 @@ export function placeWorkspaceImage(
 ): { lines: string[]; imageStart: number; imageRows: number; captionStart: number } {
   const pane = Math.max(0, Math.floor(paneHeight));
   const captions = captionLines.slice(0, pane);
-  const usedImageRows = Math.min(Math.max(0, imageRows), Math.max(0, pane - captions.length));
-  const imageStart = 0;
-  const captionStart = usedImageRows;
+  const topPad = pane > 1 ? 1 : 0;
+  const usedImageRows = Math.min(Math.max(0, imageRows), Math.max(0, pane - topPad - captions.length));
+  const imageStart = topPad;
+  const captionStart = imageStart + usedImageRows;
   const lines = Array.from({ length: pane }, () => "");
   for (let i = 0; i < captions.length; i++) {
     lines[captionStart + i] = captions[i] ?? "";

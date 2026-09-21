@@ -142,11 +142,11 @@ test("sidebar content uses a compact summary and retains Preview", () => {
   });
 });
 
-test("workspace pane gives the image the full preview body", () => {
+test("workspace pane leaves one row of padding above the image", () => {
   assert.deepEqual(workspacePaneSlots(0), { imageHeight: 0, captionHeight: 0 });
   assert.deepEqual(workspacePaneSlots(1), { imageHeight: 1, captionHeight: 0 });
-  assert.deepEqual(workspacePaneSlots(3), { imageHeight: 3, captionHeight: 0 });
-  assert.deepEqual(workspacePaneSlots(20), { imageHeight: 20, captionHeight: 0 });
+  assert.deepEqual(workspacePaneSlots(3), { imageHeight: 2, captionHeight: 0 });
+  assert.deepEqual(workspacePaneSlots(20), { imageHeight: 19, captionHeight: 0 });
 });
 
 test("images contain-fit and never upscale", () => {
@@ -156,14 +156,13 @@ test("images contain-fit and never upscale", () => {
   assert.deepEqual(fitImageCells(800, 600, 0, 20), { columns: 0, rows: 0 });
 });
 
-test("images sit at the top of the workspace pane", () => {
+test("images sit one row below the preview heading", () => {
   const placed = placeWorkspaceImage(8, 2, []);
   assert.equal(placed.lines.length, 8);
-  assert.equal(placed.imageStart, 0);
+  assert.equal(placed.imageStart, 1);
   assert.equal(placed.imageRows, 2);
-  assert.equal(placed.captionStart, 2);
+  assert.equal(placed.captionStart, 3);
   assert.equal(placed.lines[0], "");
-  assert.equal(placed.lines[7], "");
 });
 
 test("home paths use a tilde without rewriting lookalikes", () => {
