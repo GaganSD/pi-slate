@@ -1,8 +1,8 @@
 # pi-minimal-ui
 
-A quiet, dark UI package for [Pi](https://pi.dev). It keeps Pi's terminal-first workflow intact while replacing the header, footer, editor chrome, and adding a compact sidebar.
+A quiet Pi TUI: centered header, compact footer, sidebar, and a muted dark theme.
 
-> This is presentation-first, not a new agent workflow. It does not add subagents, permission gates, background shells, or a remote service.
+Presentation only. No new agent workflow, tools, or network service.
 
 ## Install
 
@@ -10,7 +10,7 @@ A quiet, dark UI package for [Pi](https://pi.dev). It keeps Pi's terminal-first 
 pi install git:github.com/GaganSD/pi-extensions
 ```
 
-Choose the bundled theme with `/settings`, or add it to `~/.pi/agent/settings.json`:
+Pick `pi-minimal` in `/settings`, or set it in `~/.pi/agent/settings.json`:
 
 ```json
 {
@@ -18,28 +18,25 @@ Choose the bundled theme with `/settings`, or add it to `~/.pi/agent/settings.js
 }
 ```
 
-For a project-local install, use `pi install -l git:github.com/GaganSD/pi-extensions`.
+Project-local: `pi install -l git:github.com/GaganSD/pi-extensions`.
 
-## What it changes
+## Use
 
-- Centered Pi header and compact footer.
-- A muted `pi-minimal` theme.
-- A right sidebar with a compact **Summary** (Files Changed and Last Turn counts for the last prompt), **Preview**, and **Context**. Drag the left `│` to resize it; the chat reflows when you release, and the width is saved in `~/.pi/agent/pi-minimal-ui.json`. `/sidebar-width` sets a size or resets to the default 20%. Click a changed file or Last Turn count to open it in Preview; the heading shows what is selected, and a click on a Last Turn row expands the full tool message.
-- Files Changed reads local `git status` at startup and after Pi work; it does not poll while Pi is idle. Click a changed file to lazily load its read-only Git diff preview.
-- Image peek: put the cursor on an `[image-N]` attachment token to preview it in the sidebar. Image-capable terminals render the image; other terminals get a text fallback, and leaving the token restores a selected file diff.
-- `/minimal-ui` toggles comfortable/compact editor density and the standard/minimal footer. Preferences are stored in `~/.pi/agent/pi-minimal-ui.json`.
+- **Sidebar** — Summary (Files Changed, Last Turn), Preview, Context. Drag the left `│` to resize; width is saved in `~/.pi/agent/pi-minimal-ui.json`.
+- `/sidebar-width` — `default`, `narrow`, `medium`, `wide`, or a column count.
+- `/minimal-ui` — comfortable/compact editor, standard/minimal footer.
+- Click a changed file or Last Turn count to open Preview. Click a Last Turn row again for the full tool message.
+- Put the cursor on an `[image-N]` token to peek it. Image terminals render the file; others get text.
 
-The split sidebar is used in fullscreen TUI mode. On narrower terminals or regular TUI mode, Pi falls back to an overlay; non-interactive Pi modes have no UI changes.
+Files Changed reads local `git status` after Pi work. It does not poll while idle.
+
+Fullscreen TUI only. Narrow or regular TUI falls back to Pi's overlay. Non-interactive modes are unchanged.
 
 ## Requirements
 
-- Pi **0.85.1** or newer (tested with 0.85.1).
-- A Git repository for Files Changed; outside one it simply shows no files.
-- An image-capable terminal (Kitty, iTerm2, Ghostty, WezTerm, or Warp) for inline image previews.
-
-## Design
-
-Pi keeps its core minimal by leaving workflow choices to packages. `pi-minimal-ui` stays presentation-first: it is local, uses Pi's extension API, and avoids agent-facing workflow tools and dependencies beyond Pi's peer packages.
+- Pi **0.85.1** or newer
+- A Git repository for Files Changed (otherwise the list is empty)
+- Kitty, iTerm2, Ghostty, WezTerm, or Warp for inline image previews
 
 ## Remove
 
