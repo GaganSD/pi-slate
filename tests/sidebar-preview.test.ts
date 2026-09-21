@@ -110,13 +110,11 @@ test("summary leaves blank lines between its sections", () => {
   ]);
   sidebar.setTurnImpact({
     revision: 1,
-    filesRead: 0,
-    filesModified: 0,
-    filesDeleted: 2,
-    shellCommands: 1,
-    testsPassed: 0,
-    testsFailed: 0,
-    testsUnknown: 0,
+    filesRead: 1,
+    toolsCalled: 6,
+    shellCommands: 5,
+    subagentsSpawned: 0,
+    events: [],
   });
   const labels = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
   const summary = labels.indexOf("Summary");
@@ -127,6 +125,26 @@ test("summary leaves blank lines between its sections", () => {
   assert.ok(lastTurn > files);
   assert.equal(labels[lastTurn - 1], "");
   assert.equal(labels[lastTurn + 1], "");
-  assert.match(labels[lastTurn + 2], /0 files read/);
-  assert.match(labels[lastTurn + 3], /2 files deleted/);
+  assert.equal(labels[lastTurn + 2], "1 file read");
+  assert.equal(labels[lastTurn + 3], "6 tools called");
+  assert.equal(labels[lastTurn + 4], "5 shell commands");
+  assert.equal(labels[lastTurn + 5], "0 subagents spawned");
+});
+
+test("clicking a last-turn fact opens that list in Preview", () => {
+  const sidebar = attachSidebar();
+  sidebar.setTurnImpact({
+    revision: 1,
+    filesRead: 1,
+    toolsCalled: 1,
+    shellCommands: 0,
+    subagentsSpawned: 0,
+    events: [{ id: "r1", toolName: "read", title: "read a.ts", detail: "full read", isError: false, pending: false }],
+  });
+  const labels = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
+  const lastTurn = labels.indexOf("Last Turn");
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 2 })), { handled: true, render: true });
+  assert.equal(sidebar.currentViewId(), "turn:read");
+  const preview = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "")).join("\n");
+  assert.match(preview, /read a.ts/);
 });

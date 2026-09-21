@@ -1,98 +1,42 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  deletedPathsFromCommand,
+  eventTitle,
+  eventsForFilter,
+  formatDetail,
+  formatResult,
   formatTurnImpact,
-  isTestCommand,
   TurnImpactTracker,
 } from "../extensions/pi-minimal-ui/turn-impact.ts";
 
-test("isTestCommand recognizes runner invocations only", () => {
-  assert.equal(isTestCommand("npm test"), true);
-  assert.equal(isTestCommand("pnpm run test"), true);
-  assert.equal(isTestCommand("cd pkg && yarn test"), true);
-  assert.equal(isTestCommand("vitest run"), true);
-  assert.equal(isTestCommand("cargo test"), true);
-  assert.equal(isTestCommand("node --test"), true);
-  assert.equal(isTestCommand("echo test"), false);
-  assert.equal(isTestCommand("cat latest.test.ts"), false);
-  assert.equal(isTestCommand("npm testing"), false);
-});
-
-test("turn impact counts distinct successful reads and writes", () => {
+test("turn impact counts tools, shells, reads, and subagents", () => {
   const impact = new TurnImpactTracker();
   impact.toolCall({ toolCallId: "r1", toolName: "read", input: { path: "a.ts" } });
   impact.toolCall({ toolCallId: "r2", toolName: "read", input: { path: "a.ts" } });
-  impact.toolCall({ toolCallId: "r3", toolName: "read", input: { path: "b.ts" } });
-  impact.toolCall({ toolCallId: "e1", toolName: "edit", input: { path: "a.ts" } });
-  impact.toolCall({ toolCallId: "w1", toolName: "write", input: { path: "c.ts" } });
-  assert.deepEqual(impact.snapshot(), {
-    revision: 5,
-    filesRead: 0,
-    filesModified: 0,
-    filesDeleted: 0,
-    shellCommands: 0,
-    testsPassed: 0,
-    testsFailed: 0,
-    testsUnknown: 0,
-  });
-
-  impact.toolEnd({ toolCallId: "r1", isError: false });
-  impact.toolEnd({ toolCallId: "r2", isError: false });
-  impact.toolEnd({ toolCallId: "r3", isError: true });
-  impact.toolEnd({ toolCallId: "e1", isError: false });
-  impact.toolEnd({ toolCallId: "w1", isError: true });
-  assert.equal(impact.snapshot().filesRead, 1);
-  assert.equal(impact.snapshot().filesModified, 1);
-});
-
-test("turn impact counts shells and resolves test pass/fail", () => {
-  const impact = new TurnImpactTracker();
   impact.toolCall({ toolCallId: "s1", toolName: "bash", input: { command: "ls" } });
-  impact.toolCall({ toolCallId: "t1", toolName: "bash", input: { command: "npm test" } });
-  impact.toolCall({ toolCallId: "t2", toolName: "powershell", input: { command: "npm test" } });
-  assert.equal(impact.snapshot().shellCommands, 3);
-  assert.equal(impact.snapshot().testsUnknown, 2);
+  impact.toolCall({ toolCallId: "a1", toolName: "subagent", input: { agent: "reviewer", task: "check" } });
+  assert.equal(impact.snapshot().toolsCalled, 4);
+  assert.equal(impact.snapshot().shellCommands, 1);
+  assert.equal(impact.snapshot().subagentsSpawned, 1);
+  assert.equal(impact.snapshot().filesRead, 0);
 
-  impact.toolEnd({ toolCallId: "t1", isError: false });
-  impact.toolEnd({ toolCallId: "t2", isError: true });
-  assert.equal(impact.snapshot().testsPassed, 1);
-  assert.equal(impact.snapshot().testsFailed, 1);
-  assert.equal(impact.snapshot().testsUnknown, 0);
-});
-
-test("bash deletions count after a successful tool end", () => {
-  const impact = new TurnImpactTracker();
-  impact.toolCall({ toolCallId: "d1", toolName: "bash", input: { command: "rm -rf missions/a.json missions/b.json" } });
-  impact.toolCall({ toolCallId: "d2", toolName: "bash", input: { command: "git rm old.ts" } });
-  assert.equal(impact.snapshot().filesDeleted, 0);
-  assert.equal(impact.snapshot().shellCommands, 2);
-  impact.toolEnd({ toolCallId: "d1", isError: false });
-  impact.toolEnd({ toolCallId: "d2", isError: true });
-  assert.equal(impact.snapshot().filesDeleted, 2);
-  assert.equal(impact.snapshot().filesModified, 0);
+  impact.toolEnd({ toolCallId: "r1", isError: false, result: "ok" });
+  impact.toolEnd({ toolCallId: "r2", isError: true, result: "nope" });
+  impact.toolEnd({ toolCallId: "s1", isError: false, result: "files" });
+  impact.toolEnd({ toolCallId: "a1", isError: false, result: "done" });
+  assert.equal(impact.snapshot().filesRead, 1);
+  assert.equal(impact.snapshot().events.length, 4);
 });
 
 test("later LLM rounds keep last-prompt impact until reset", () => {
   const impact = new TurnImpactTracker();
   impact.toolCall({ toolCallId: "s1", toolName: "bash", input: { command: "rm gone.ts" } });
-  impact.toolEnd({ toolCallId: "s1", isError: false });
+  impact.toolEnd({ toolCallId: "s1", isError: false, result: "" });
   impact.toolCall({ toolCallId: "r1", toolName: "read", input: { path: "a.ts" } });
-  impact.toolEnd({ toolCallId: "r1", isError: false });
-  assert.equal(impact.snapshot().filesDeleted, 1);
-  assert.equal(impact.snapshot().filesRead, 1);
+  impact.toolEnd({ toolCallId: "r1", isError: false, result: "src" });
   assert.equal(impact.snapshot().shellCommands, 1);
-});
-
-test("deletedPathsFromCommand reads rm/git rm args and ignores other commands", () => {
-  assert.deepEqual(deletedPathsFromCommand("rm -rf missions/a.json missions/b.json"), [
-    "missions/a.json",
-    "missions/b.json",
-  ]);
-  assert.deepEqual(deletedPathsFromCommand("sudo git rm old.ts"), ["old.ts"]);
-  assert.deepEqual(deletedPathsFromCommand("ls && rm gone.ts"), ["gone.ts"]);
-  assert.deepEqual(deletedPathsFromCommand("rm"), ["(deleted)"]);
-  assert.deepEqual(deletedPathsFromCommand("ls missions"), []);
+  assert.equal(impact.snapshot().filesRead, 1);
+  assert.equal(impact.snapshot().toolsCalled, 2);
 });
 
 test("reset clears the current turn and keeps moving the revision", () => {
@@ -101,38 +45,55 @@ test("reset clears the current turn and keeps moving the revision", () => {
   impact.toolEnd({ toolCallId: "r1", isError: false });
   const afterReset = impact.reset();
   assert.equal(afterReset.filesRead, 0);
-  assert.equal(afterReset.filesDeleted, 0);
-  assert.equal(afterReset.shellCommands, 0);
+  assert.equal(afterReset.toolsCalled, 0);
+  assert.equal(afterReset.events.length, 0);
   assert.ok(afterReset.revision > 0);
 });
 
-test("formatTurnImpact prints compact factual lines", () => {
+test("formatTurnImpact prints the four last-turn facts", () => {
   assert.deepEqual(formatTurnImpact({
     revision: 1,
     filesRead: 0,
-    filesModified: 0,
-    filesDeleted: 0,
+    toolsCalled: 0,
     shellCommands: 0,
-    testsPassed: 0,
-    testsFailed: 0,
-    testsUnknown: 0,
+    subagentsSpawned: 0,
+    events: [],
   }), [
-    "0 files read · 0 files modified",
+    "0 files read",
+    "0 tools called",
     "0 shell commands",
+    "0 subagents spawned",
   ]);
   assert.deepEqual(formatTurnImpact({
     revision: 2,
     filesRead: 1,
-    filesModified: 2,
-    filesDeleted: 3,
-    shellCommands: 1,
-    testsPassed: 1,
-    testsFailed: 2,
-    testsUnknown: 1,
+    toolsCalled: 6,
+    shellCommands: 5,
+    subagentsSpawned: 2,
+    events: [],
   }), [
-    "1 file read · 2 files modified",
-    "3 files deleted",
-    "1 shell command",
-    "1 test passed · 2 tests failed · 1 test running/unknown",
+    "1 file read",
+    "6 tools called",
+    "5 shell commands",
+    "2 subagents spawned",
   ]);
+});
+
+test("eventsForFilter slices the unified log", () => {
+  const events = [
+    { id: "1", toolName: "read", title: "read a.ts", detail: "", isError: false, pending: false },
+    { id: "2", toolName: "bash", title: "bash ls", detail: "", isError: false, pending: false },
+    { id: "3", toolName: "subagent", title: "reviewer", detail: "", isError: false, pending: false },
+  ];
+  assert.equal(eventsForFilter(events, "tool").length, 3);
+  assert.deepEqual(eventsForFilter(events, "read").map((event) => event.id), ["1"]);
+  assert.deepEqual(eventsForFilter(events, "shell").map((event) => event.id), ["2"]);
+  assert.deepEqual(eventsForFilter(events, "subagent").map((event) => event.id), ["3"]);
+});
+
+test("event titles and details stay auditable", () => {
+  assert.equal(eventTitle("bash", { command: "ls -la" }), "bash ls -la");
+  assert.equal(eventTitle("subagent", { agent: "reviewer", task: "check" }), "reviewer · check");
+  assert.equal(formatResult([{ type: "text", text: "hello" }]), "hello");
+  assert.match(formatDetail("read", { path: "a.ts" }, "src", false, false), /read · ok/);
 });

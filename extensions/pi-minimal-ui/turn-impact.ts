@@ -1,82 +1,94 @@
+export type TurnFilter = "read" | "tool" | "shell" | "subagent";
+
+export type TurnEvent = {
+  id: string;
+  toolName: string;
+  title: string;
+  detail: string;
+  isError: boolean;
+  pending: boolean;
+};
+
 export type TurnImpactSnapshot = {
   revision: number;
   filesRead: number;
-  filesModified: number;
-  filesDeleted: number;
+  toolsCalled: number;
   shellCommands: number;
-  testsPassed: number;
-  testsFailed: number;
-  testsUnknown: number;
+  subagentsSpawned: number;
+  events: TurnEvent[];
 };
 
 type PendingCall = {
-  read?: string;
-  modify?: string;
-  deleted?: string[];
-  test?: boolean;
+  event: TurnEvent;
+  input?: Record<string, unknown>;
 };
+
+const FILTERS: TurnFilter[] = ["read", "tool", "shell", "subagent"];
 
 /** Transient, UI-local facts observed during the current user prompt. */
 export class TurnImpactTracker {
-  private reads = new Set<string>();
-  private modified = new Set<string>();
-  private deleted = new Set<string>();
+  private events: TurnEvent[] = [];
   private pending = new Map<string, PendingCall>();
+  private reads = new Set<string>();
+  private toolsCalled = 0;
   private shellCommands = 0;
-  private testsPassed = 0;
-  private testsFailed = 0;
-  private testsUnknown = 0;
+  private subagentsSpawned = 0;
   private revision = 0;
 
   reset(): TurnImpactSnapshot {
-    this.reads.clear();
-    this.modified.clear();
-    this.deleted.clear();
+    this.events = [];
     this.pending.clear();
+    this.reads.clear();
+    this.toolsCalled = 0;
     this.shellCommands = 0;
-    this.testsPassed = 0;
-    this.testsFailed = 0;
-    this.testsUnknown = 0;
+    this.subagentsSpawned = 0;
     this.revision += 1;
     return this.snapshot();
   }
 
-  toolCall(call: { toolCallId: string; toolName: string; input?: { path?: unknown; command?: unknown } }): TurnImpactSnapshot {
-    const path = typeof call.input?.path === "string" && call.input.path.trim() ? call.input.path : undefined;
-    const pending: PendingCall = this.pending.get(call.toolCallId) ?? {};
-    if (call.toolName === "read" && path) pending.read = path;
-    if ((call.toolName === "edit" || call.toolName === "write") && path) pending.modify = path;
-    if (call.toolName === "bash" || call.toolName === "powershell") {
-      this.shellCommands += 1;
-      const command = typeof call.input?.command === "string" ? call.input.command : "";
-      const deleted = deletedPathsFromCommand(command);
-      if (deleted.length) pending.deleted = deleted;
-      if (isTestCommand(command)) {
-        pending.test = true;
-        this.testsUnknown += 1;
-      }
-    }
-    if (pending.read || pending.modify || pending.deleted || pending.test) {
-      this.pending.set(call.toolCallId, pending);
-    }
+  toolCall(call: { toolCallId: string; toolName: string; input?: Record<string, unknown> }): TurnImpactSnapshot {
+    const input = call.input && typeof call.input === "object" ? call.input : undefined;
+    this.toolsCalled += 1;
+    if (isShellTool(call.toolName)) this.shellCommands += 1;
+    if (call.toolName === "subagent") this.subagentsSpawned += 1;
+    const event: TurnEvent = {
+      id: call.toolCallId,
+      toolName: call.toolName,
+      title: eventTitle(call.toolName, input),
+      detail: formatDetail(call.toolName, input, undefined, false, true),
+      isError: false,
+      pending: true,
+    };
+    this.events.push(event);
+    this.pending.set(call.toolCallId, { event, input });
     this.revision += 1;
     return this.snapshot();
   }
 
-  toolEnd(end: { toolCallId: string; isError: boolean }): TurnImpactSnapshot {
-    const pending = this.pending.get(end.toolCallId);
-    if (!pending) return this.snapshot();
+  toolEnd(end: { toolCallId: string; isError: boolean; result?: unknown; toolName?: string }): TurnImpactSnapshot {
+    let pending = this.pending.get(end.toolCallId);
+    if (!pending) {
+      const toolName = end.toolName || "tool";
+      this.toolsCalled += 1;
+      if (isShellTool(toolName)) this.shellCommands += 1;
+      if (toolName === "subagent") this.subagentsSpawned += 1;
+      const event: TurnEvent = {
+        id: end.toolCallId,
+        toolName,
+        title: eventTitle(toolName, undefined),
+        detail: "",
+        isError: end.isError,
+        pending: false,
+      };
+      this.events.push(event);
+      pending = { event };
+    }
     this.pending.delete(end.toolCallId);
-    if (!end.isError && pending.read) this.reads.add(pending.read);
-    if (!end.isError && pending.modify) this.modified.add(pending.modify);
-    if (!end.isError && pending.deleted) {
-      for (const path of pending.deleted) this.deleted.add(path);
-    }
-    if (pending.test) {
-      this.testsUnknown = Math.max(0, this.testsUnknown - 1);
-      if (end.isError) this.testsFailed += 1;
-      else this.testsPassed += 1;
-    }
+    pending.event.pending = false;
+    pending.event.isError = end.isError;
+    pending.event.detail = formatDetail(pending.event.toolName, pending.input, end.result, end.isError, false);
+    const path = typeof pending.input?.path === "string" ? pending.input.path : undefined;
+    if (!end.isError && pending.event.toolName === "read" && path) this.reads.add(path);
     this.revision += 1;
     return this.snapshot();
   }
@@ -85,34 +97,89 @@ export class TurnImpactTracker {
     return {
       revision: this.revision,
       filesRead: this.reads.size,
-      filesModified: this.modified.size,
-      filesDeleted: this.deleted.size,
+      toolsCalled: this.toolsCalled,
       shellCommands: this.shellCommands,
-      testsPassed: this.testsPassed,
-      testsFailed: this.testsFailed,
-      testsUnknown: this.testsUnknown,
+      subagentsSpawned: this.subagentsSpawned,
+      events: this.events,
     };
   }
 }
 
-export function isTestCommand(command: string): boolean {
-  // Deliberately recognize runner invocations only, rather than arbitrary text containing “test”.
-  return /(?:^|[;&|]\s*|\s)(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|(?:^|[;&|]\s*|\s)(?:vitest|jest|pytest|go\s+test|cargo\s+test|node\s+--test)\b/.test(command);
+export function turnFilters(): TurnFilter[] {
+  return FILTERS;
 }
 
-export function deletedPathsFromCommand(command: string): string[] {
-  const paths: string[] = [];
-  for (const chunk of command.split(/(?:&&|\|\||;)/)) {
-    const tokens = chunk.trim().split(/\s+/).filter(Boolean);
-    let i = 0;
-    if (tokens[i] === "sudo") i += 1;
-    if (tokens[i] === "git" && tokens[i + 1] === "rm") i += 2;
-    else if (tokens[i] === "rm" || tokens[i] === "rmdir" || tokens[i] === "unlink") i += 1;
-    else continue;
-    const found = tokens.slice(i).filter((token) => !token.startsWith("-"));
-    paths.push(...(found.length > 0 ? found : ["(deleted)"]));
+export function isShellTool(toolName: string): boolean {
+  return toolName === "bash" || toolName === "powershell";
+}
+
+export function eventsForFilter(events: readonly TurnEvent[], filter: TurnFilter): TurnEvent[] {
+  if (filter === "tool") return [...events];
+  if (filter === "read") return events.filter((event) => event.toolName === "read");
+  if (filter === "shell") return events.filter((event) => isShellTool(event.toolName));
+  return events.filter((event) => event.toolName === "subagent");
+}
+
+export function eventTitle(toolName: string, input: Record<string, unknown> | undefined): string {
+  const path = typeof input?.path === "string" ? input.path : undefined;
+  const command = typeof input?.command === "string" ? input.command : undefined;
+  const pattern = typeof input?.pattern === "string" ? input.pattern : undefined;
+  const agent = typeof input?.agent === "string" ? input.agent : undefined;
+  const task = typeof input?.task === "string" ? input.task : undefined;
+  if (toolName === "read" || toolName === "edit" || toolName === "write") {
+    return path ? `${toolName} ${path}` : toolName;
   }
-  return paths;
+  if (isShellTool(toolName)) return command ? `${toolName} ${command}` : toolName;
+  if (toolName === "subagent") {
+    return [agent, task].filter(Boolean).join(" · ") || "subagent";
+  }
+  if (path) return `${toolName} ${path}`;
+  if (pattern) return `${toolName} ${pattern}`;
+  return toolName;
+}
+
+export function formatResult(result: unknown): string {
+  if (result == null) return "";
+  if (typeof result === "string") return result;
+  if (Array.isArray(result)) {
+    return result.map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object" && "text" in part) return String((part as { text: unknown }).text);
+      try {
+        return JSON.stringify(part);
+      } catch {
+        return String(part);
+      }
+    }).join("");
+  }
+  if (typeof result === "object" && result && "content" in result) {
+    return formatResult((result as { content: unknown }).content);
+  }
+  try {
+    return JSON.stringify(result, null, 2);
+  } catch {
+    return String(result);
+  }
+}
+
+export function formatDetail(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+  result: unknown,
+  isError: boolean,
+  pending: boolean,
+): string {
+  const state = pending ? "pending" : isError ? "error" : "ok";
+  const args = input ? JSON.stringify(input, null, 2) : "{}";
+  const body = formatResult(result);
+  return [`${toolName} · ${state}`, args, body].filter((part) => part.length > 0).join("\n");
+}
+
+export function filterLabel(filter: TurnFilter): string {
+  if (filter === "read") return "files read";
+  if (filter === "tool") return "tools called";
+  if (filter === "shell") return "shell commands";
+  return "subagents spawned";
 }
 
 function plural(count: number, singular: string, many = `${singular}s`): string {
@@ -120,16 +187,10 @@ function plural(count: number, singular: string, many = `${singular}s`): string 
 }
 
 export function formatTurnImpact(snapshot: TurnImpactSnapshot): string[] {
-  const lines = [
-    `${plural(snapshot.filesRead, "file")} read · ${plural(snapshot.filesModified, "file")} modified`,
+  return [
+    plural(snapshot.filesRead, "file") + " read",
+    plural(snapshot.toolsCalled, "tool") + " called",
+    plural(snapshot.shellCommands, "shell command"),
+    plural(snapshot.subagentsSpawned, "subagent") + " spawned",
   ];
-  if (snapshot.filesDeleted) lines.push(plural(snapshot.filesDeleted, "file") + " deleted");
-  lines.push(plural(snapshot.shellCommands, "shell command"));
-  const tests = [
-    snapshot.testsPassed ? `${plural(snapshot.testsPassed, "test")} passed` : "",
-    snapshot.testsFailed ? `${plural(snapshot.testsFailed, "test")} failed` : "",
-    snapshot.testsUnknown ? `${plural(snapshot.testsUnknown, "test")} running/unknown` : "",
-  ].filter(Boolean).join(" · ");
-  if (tests) lines.push(tests);
-  return lines;
 }

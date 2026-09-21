@@ -17,6 +17,7 @@ export type WorkspaceView = {
   render(width: number, height: number): string[];
   invalidate(): void;
   handleClick?(x: number, y: number): boolean;
+  handleWheel?(delta: number): boolean;
 };
 
 export class DiffWorkspaceView implements WorkspaceView {

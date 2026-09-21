@@ -128,7 +128,7 @@ test("sidebar content uses a compact summary and retains Preview", () => {
     assert.ok(slots.peekHeight >= 1);
   }
   assert.deepEqual(splitSidebarContent(20, 5), {
-    summaryHeight: 13, filesHeight: 5, dividerHeight: 1, peekHeight: 6,
+    summaryHeight: 14, filesHeight: 5, dividerHeight: 1, peekHeight: 5,
   });
   assert.deepEqual(splitSidebarContent(6, 5), {
     summaryHeight: 4, filesHeight: 1, dividerHeight: 1, peekHeight: 1,

@@ -311,10 +311,19 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     sidebar.setTurnImpact(turnImpact.reset());
   });
   pi.on("tool_call", (event) => {
-    sidebar.setTurnImpact(turnImpact.toolCall({ toolCallId: event.toolCallId, toolName: event.toolName, input: event.input }));
+    sidebar.setTurnImpact(turnImpact.toolCall({
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      input: event.input as Record<string, unknown> | undefined,
+    }));
   });
   pi.on("tool_execution_end", (event) => {
-    sidebar.setTurnImpact(turnImpact.toolEnd({ toolCallId: event.toolCallId, isError: event.isError }));
+    sidebar.setTurnImpact(turnImpact.toolEnd({
+      toolCallId: event.toolCallId,
+      isError: event.isError,
+      result: event.result,
+      toolName: event.toolName,
+    }));
     void files.refresh();
   });
   pi.on("turn_end", (_event, ctx) => {
