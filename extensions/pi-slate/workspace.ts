@@ -15,15 +15,18 @@ import { fitImageCells, placeWorkspaceImage, workspacePaneSlots } from "./worksp
 export type WorkspaceView = {
   id: string;
   title?: string;
+  filePath?: string;
   render(width: number, height: number): string[];
   invalidate(): void;
   handleClick?(x: number, y: number): boolean;
+  copyTextAt?(x: number, y: number): string | undefined;
   handleWheel?(delta: number): boolean;
 };
 
 export class DiffWorkspaceView implements WorkspaceView {
   readonly id: string;
   readonly title: string;
+  readonly filePath?: string;
   private readonly state: "loading" | "diff" | "empty" | "error";
   private readonly text: string;
   private readonly theme: Theme;
@@ -37,9 +40,11 @@ export class DiffWorkspaceView implements WorkspaceView {
     text: string,
     theme: Theme,
     title = id,
+    filePath?: string,
   ) {
     this.id = `diff:${id}:${state}`;
     this.title = title;
+    this.filePath = filePath;
     this.state = state;
     this.text = text;
     this.theme = theme;
@@ -87,6 +92,7 @@ export class DiffWorkspaceView implements WorkspaceView {
 export class ImageWorkspaceView implements WorkspaceView {
   readonly id: string;
   readonly title: string;
+  readonly filePath: string;
   private readonly attachment: ImageAttachment;
   private readonly theme: Theme;
   private imageId?: number;
@@ -101,6 +107,7 @@ export class ImageWorkspaceView implements WorkspaceView {
     home?: string,
   ) {
     this.id = `image:${number}:${filePath}`;
+    this.filePath = filePath;
     this.attachment = attachment;
     this.theme = theme;
     this.location = formatImageLocation(filePath, home, number);

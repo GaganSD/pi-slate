@@ -46,6 +46,9 @@ import {
 
 const KITTY_PREFIX = "\x1b_G";
 const CLEAR = "[clear]";
+const COPY = "[copy]";
+const COPY_PATH = "[copy path]";
+const PEEK_PAD = 2;
 
 export type SidebarContextData = {
   tokens: number | null;
@@ -54,8 +57,11 @@ export type SidebarContextData = {
   spend: number;
 };
 
+export const DOUBLE_CLICK_MS = 400;
+
 export type SidebarActions = {
-  copyPath(filePath: string): void;
+  copy(text: string): void;
+  openFile(filePath: string): void;
   selectFile(file: FileChange): void;
   persistWidth?(columns: number | undefined): void;
 };
@@ -85,7 +91,8 @@ export class Sidebar implements Component {
   private filesOffset = 0;
   private selectedFileKey?: string;
   private selectedActivityRow?: number;
-  private lastClear?: { y: number; x0: number; x1: number };
+  private lastPeekHits?: Array<{ id: "clear" | "copy"; y: number; x0: number; x1: number }>;
+  private lastClick?: { target: string; at: number };
   private cwd = "";
   private home = homedir();
   private contentCached?: { key: string; lines: string[] };
@@ -133,10 +140,6 @@ export class Sidebar implements Component {
 
   setActions(actions: SidebarActions): void {
     this.actions = actions;
-  }
-
-  copyPath(filePath: string): void {
-    this.actions?.copyPath(filePath);
   }
 
   /** Temporary image preview; it overrides but never discards a selected file preview. */
@@ -254,16 +257,23 @@ export class Sidebar implements Component {
       this.selectedFileKey = fileKey(file);
       this.setView(undefined);
       this.actions?.selectFile(file);
+      if (this.isDoubleClick(event, `file:${file.path}:${event.x}`)) this.actions?.openFile(file.path);
       return { handled: true };
     }
-    if (
-      event.type === "click" && event.button === "left" && this.lastClear
-      && event.y === this.lastClear.y
-      && event.x >= this.lastClear.x0 && event.x < this.lastClear.x1
-    ) {
-      this.setView(undefined);
-      this.setSelectedPreview(undefined);
-      return { handled: true, render: true };
+    if (event.type === "click" && event.button === "left" && this.lastPeekHits) {
+      const hit = this.lastPeekHits.find((item) => (
+        event.y === item.y && event.x >= item.x0 && event.x < item.x1
+      ));
+      if (hit?.id === "clear") {
+        this.setView(undefined);
+        this.setSelectedPreview(undefined);
+        return { handled: true, render: true };
+      }
+      if (hit?.id === "copy") {
+        const path = this.effectiveView()?.filePath;
+        if (path) this.actions?.copy(path);
+        return { handled: true };
+      }
     }
     const view = this.effectiveView();
     const titleOffset = peekHeight > 1 ? 1 : 0;
@@ -274,9 +284,23 @@ export class Sidebar implements Component {
       this.tui?.requestRender();
       return { handled: true };
     }
-    if (event.type !== "click" || event.button !== "left" || !view?.handleClick) return undefined;
+    if (event.type === "click" && event.button === "left" && event.y >= peekStart && event.y < peekStart + peekHeight) {
+      const path = view?.filePath;
+      if (path && this.isDoubleClick(event, `preview:${path}:${event.x}:${event.y}`)) {
+        this.actions?.openFile(path);
+        return { handled: true };
+      }
+    }
+    if (event.type !== "click" || event.button !== "left") return undefined;
     const y = event.y - peekBodyStart;
-    if (y < 0 || y >= peekHeight - titleOffset || !view.handleClick(event.x, y)) return undefined;
+    if (y < 0 || y >= peekHeight - titleOffset) return undefined;
+    const peekX = event.x - PEEK_PAD;
+    const copied = view?.copyTextAt?.(peekX, y);
+    if (copied !== undefined) {
+      this.actions?.copy(copied);
+      return { handled: true };
+    }
+    if (!view?.handleClick?.(peekX, y)) return undefined;
     return { handled: true };
   }
 
@@ -321,7 +345,8 @@ export class Sidebar implements Component {
     this.filesOffset = 0;
     this.selectedFileKey = undefined;
     this.selectedActivityRow = undefined;
-    this.lastClear = undefined;
+    this.lastPeekHits = undefined;
+    this.lastClick = undefined;
     this.cwd = "";
     this.contentCached = undefined;
     this.dockCached = undefined;
@@ -431,6 +456,15 @@ export class Sidebar implements Component {
     });
   }
 
+  private isDoubleClick(event: TuiMouseEvent, target: string): boolean {
+    if (event.clickCount !== undefined) return event.clickCount === 2;
+    const at = Date.now();
+    const previous = this.lastClick;
+    const doubled = Boolean(previous && previous.target === target && at - previous.at <= DOUBLE_CLICK_MS);
+    this.lastClick = doubled ? undefined : { target, at };
+    return doubled;
+  }
+
   private activityView(): TurnLogView {
     if (!this.turnView) {
       this.turnView = new TurnLogView(this.turnImpact.events, this.requireTheme(), () => {
@@ -466,20 +500,30 @@ export class Sidebar implements Component {
   private peekHeading(width: number, theme: Theme | undefined, view: WorkspaceView | undefined): string {
     const title = view?.title ? `Preview · ${view.title}` : "Preview";
     if (!view) {
-      this.lastClear = undefined;
+      this.lastPeekHits = undefined;
       return this.heading(title, width, theme);
     }
-    const inner = Math.max(0, width - 2);
-    const leftMax = Math.max(0, inner - CLEAR.length - 1);
+    const inner = Math.max(0, width - PEEK_PAD);
+    const copyLabel = peekCopyLabel(view, inner);
+    const actions = copyLabel ? `${copyLabel} ${CLEAR}` : CLEAR;
+    const leftMax = Math.max(0, inner - actions.length - 1);
     const left = truncateToWidth(title, leftMax, "…");
-    const pad = Math.max(1, inner - visibleWidth(left) - CLEAR.length);
-    this.lastClear = {
-      y: this.lastSlots.summaryHeight + this.lastSlots.dividerHeight,
-      x0: 2 + inner - CLEAR.length,
-      x1: 2 + inner,
-    };
+    const pad = Math.max(1, inner - visibleWidth(left) - actions.length);
+    const y = this.lastSlots.summaryHeight + this.lastSlots.dividerHeight;
+    const clearX0 = Math.max(PEEK_PAD, PEEK_PAD + inner - CLEAR.length);
+    const hits: Array<{ id: "clear" | "copy"; y: number; x0: number; x1: number }> = [
+      { id: "clear", y, x0: clearX0, x1: Math.max(clearX0, PEEK_PAD + inner) },
+    ];
+    if (copyLabel) {
+      const copyX1 = clearX0 - 1;
+      const copyX0 = Math.max(PEEK_PAD, copyX1 - copyLabel.length);
+      if (copyX0 < copyX1 && copyX0 >= PEEK_PAD) {
+        hits.unshift({ id: "copy", y, x0: copyX0, x1: Math.min(copyX1, clearX0) });
+      }
+    }
+    this.lastPeekHits = hits;
     const border = theme ? theme.fg("borderMuted", "│") : "│";
-    const action = theme ? theme.fg("dim", CLEAR) : CLEAR;
+    const action = theme ? theme.fg("dim", actions) : actions;
     const label = theme ? theme.bold(theme.fg("text", left)) : left;
     return `${border} ${label}${" ".repeat(pad)}${action}`;
   }
@@ -622,6 +666,14 @@ class ResizeGuide implements Component {
     const mark = this.theme ? this.theme.fg("accent", "│") : "│";
     return Array.from({ length: Math.max(1, this.rows()) }, () => mark);
   }
+}
+
+function peekCopyLabel(view: WorkspaceView, inner: number): string | undefined {
+  if (!view.filePath) return undefined;
+  const preferred = view.id.startsWith("image:") ? COPY_PATH : COPY;
+  const needed = (label: string) => label.length + 1 + CLEAR.length + 1;
+  if (inner < needed(preferred) && preferred !== COPY) return COPY;
+  return preferred;
 }
 
 function emptyTurnImpact(): TurnImpactSnapshot {

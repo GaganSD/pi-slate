@@ -45,12 +45,22 @@ test("turn log lists unified activity and expands the full message on click", ()
   const view = new TurnLogView([event("1", "read", "read a.ts"), event("2", "bash", "bash ls")], theme());
   assert.equal(view.title, "activity");
   const collapsed = view.render(40, 4);
-  assert.match(collapsed[0] ?? "", /▸ read a.ts/);
+  assert.match(collapsed[0] ?? "", /▸ read a.ts \[copy\]/);
   assert.equal(view.handleClick(0, 0), true);
   const expanded = view.render(40, 6);
-  assert.match(expanded[0] ?? "", /▾ read a.ts/);
+  assert.match(expanded[0] ?? "", /▾ read a.ts \[copy\]/);
   assert.match(expanded[1] ?? "", /full 1/);
   assert.match(expanded[2] ?? "", /more/);
+});
+
+test("turn log [copy] copies title and detail without expanding", () => {
+  const view = new TurnLogView([event("1", "read", "read a.ts")], theme());
+  const line = view.render(40, 2)[0] ?? "";
+  const x = line.indexOf("[copy]");
+  assert.ok(x >= 0);
+  assert.equal(view.copyTextAt(x, 0), "read a.ts\nfull 1\nmore");
+  assert.equal(view.handleClick(x, 0), false);
+  assert.match(view.render(40, 2)[0] ?? "", /▸ read a.ts/);
 });
 
 test("unified activity log keeps pending and failed calls auditable", () => {

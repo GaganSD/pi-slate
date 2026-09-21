@@ -1,8 +1,10 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { compactDisplayText } from "./layout.ts";
 import { isShellTool, type TurnEvent } from "./turn-impact.ts";
 import type { WorkspaceView } from "./workspace.ts";
+
+const COPY = "[copy]";
 
 export class TurnLogView implements WorkspaceView {
   readonly id: string;
@@ -15,7 +17,7 @@ export class TurnLogView implements WorkspaceView {
   private expanded = new Set<string>();
   private offset = 0;
   private cached?: { key: string; lines: string[] };
-  private rows: Array<{ event?: TurnEvent; text: string }> = [];
+  private rows: Array<{ event?: TurnEvent; text: string; copyX0?: number; copyX1?: number }> = [];
 
   constructor(events: readonly TurnEvent[], theme: Theme, onChange?: () => void, cwd?: string, home?: string) {
     this.id = "turn:activity";
@@ -43,14 +45,20 @@ export class TurnLogView implements WorkspaceView {
     this.cached = undefined;
   }
 
-  handleClick(_x: number, y: number): boolean {
+  handleClick(x: number, y: number): boolean {
     const row = this.rows[this.offset + y];
-    if (!row?.event) return false;
+    if (!row?.event || this.copyHit(row, x)) return false;
     if (this.expanded.has(row.event.id)) this.expanded.delete(row.event.id);
     else this.expanded.add(row.event.id);
     this.cached = undefined;
     this.onChange?.();
     return true;
+  }
+
+  copyTextAt(x: number, y: number): string | undefined {
+    const row = this.rows[this.offset + y];
+    if (!row?.event || !this.copyHit(row, x)) return undefined;
+    return [row.event.title.trim(), row.event.detail.trim()].filter(Boolean).join("\n");
   }
 
   handleWheel(delta: number): boolean {
@@ -75,9 +83,9 @@ export class TurnLogView implements WorkspaceView {
     return lines;
   }
 
-  private buildRows(width: number): Array<{ event?: TurnEvent; text: string }> {
+  private buildRows(width: number): Array<{ event?: TurnEvent; text: string; copyX0?: number; copyX1?: number }> {
     const items = this.events;
-    const rows: Array<{ event?: TurnEvent; text: string }> = [];
+    const rows: Array<{ event?: TurnEvent; text: string; copyX0?: number; copyX1?: number }> = [];
     if (items.length === 0) {
       rows.push({ text: truncateToWidth(this.theme.fg("dim", "none"), width, "…") });
       return rows;
@@ -86,9 +94,14 @@ export class TurnLogView implements WorkspaceView {
       const mark = this.expanded.has(event.id) ? "▾" : "▸";
       const tone = eventTone(event);
       const title = compactDisplayText(event.title, this.cwd, this.home);
+      const leftMax = Math.max(0, width - COPY.length - 1);
+      const left = truncateToWidth(`${mark} ${title}`, leftMax, "…");
+      const copyX0 = visibleWidth(left) + 1;
       rows.push({
         event,
-        text: truncateToWidth(this.theme.fg(tone, `${mark} ${title}`), width, "…"),
+        text: truncateToWidth(`${this.theme.fg(tone, left)} ${this.theme.fg("dim", COPY)}`, width, "…"),
+        copyX0,
+        copyX1: copyX0 + COPY.length,
       });
       if (!this.expanded.has(event.id)) continue;
       for (const line of wrapLines(compactDisplayText(event.detail, this.cwd, this.home), width)) {
@@ -96,6 +109,10 @@ export class TurnLogView implements WorkspaceView {
       }
     }
     return rows;
+  }
+
+  private copyHit(row: { copyX0?: number; copyX1?: number }, x: number): boolean {
+    return row.copyX0 !== undefined && row.copyX1 !== undefined && x >= row.copyX0 && x < row.copyX1;
   }
 }
 

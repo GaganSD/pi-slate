@@ -4,7 +4,7 @@ import {
   ghCreateIssueArgs,
   issueTemplate,
   newIssueUrl,
-  openUrlArgs,
+  openExternalArgs,
   parseGhIssueUrl,
   SLATE_ISSUES_URL,
   SLATE_NEW_ISSUE_URL,
@@ -38,9 +38,12 @@ test("gh output and open args stay usable across platforms", () => {
   assert.deepEqual(ghCreateIssueArgs("Title", "Body"), [
     "issue", "create", "--repo", SLATE_REPO, "--title", "Title", "--body", "Body",
   ]);
-  assert.deepEqual(openUrlArgs(SLATE_ISSUES_URL, "darwin"), { command: "open", args: [SLATE_ISSUES_URL] });
-  assert.deepEqual(openUrlArgs(SLATE_ISSUES_URL, "linux"), { command: "xdg-open", args: [SLATE_ISSUES_URL] });
-  assert.deepEqual(openUrlArgs(SLATE_ISSUES_URL, "win32"), { command: "cmd", args: ["/c", "start", "", `"${SLATE_ISSUES_URL}"`] });
+  assert.deepEqual(openExternalArgs(SLATE_ISSUES_URL, "darwin"), { command: "open", args: [SLATE_ISSUES_URL] });
+  assert.deepEqual(openExternalArgs(SLATE_ISSUES_URL, "linux"), { command: "xdg-open", args: [SLATE_ISSUES_URL] });
+  assert.deepEqual(openExternalArgs(SLATE_ISSUES_URL, "win32"), { command: "cmd", args: ["/c", "start", "", `"${SLATE_ISSUES_URL}"`] });
+  assert.deepEqual(openExternalArgs("/tmp/note.md", "darwin"), { command: "open", args: ["/tmp/note.md"] });
+  assert.deepEqual(openExternalArgs("/tmp/note.md", "linux"), { command: "xdg-open", args: ["/tmp/note.md"] });
+  assert.deepEqual(openExternalArgs("/tmp/note.md", "win32"), { command: "cmd", args: ["/c", "start", "", `"/tmp/note.md"`] });
 });
 
 test("new issue URLs stay under the browser length cap", () => {

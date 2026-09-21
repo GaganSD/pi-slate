@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { Sidebar } from "../extensions/pi-slate/sidebar.ts";
+import { DOUBLE_CLICK_MS, Sidebar } from "../extensions/pi-slate/sidebar.ts";
 import { DiffWorkspaceView, type WorkspaceView } from "../extensions/pi-slate/workspace.ts";
 import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
 
@@ -18,7 +18,13 @@ function view(id: string): WorkspaceView {
 }
 
 function strip(line: string): string {
-  return line.replace(/\[(?!clear\])\w+\]/g, "").replace(/^│\s?/, "");
+  return line.replace(/\[(?!clear\]|copy(?: path)?\])\w+\]/g, "").replace(/^│\s?/, "");
+}
+
+function actionX(line: string, label: string): number {
+  const x = strip(line).indexOf(label);
+  assert.ok(x >= 0, `missing ${label}`);
+  return x + 2;
 }
 
 function mouse(partial: Partial<TuiMouseEvent> & Pick<TuiMouseEvent, "type" | "y">): TuiMouseEvent {
@@ -93,10 +99,11 @@ test("clicking a changed file selects it instead of copying its path", () => {
   const selected: FileChange[] = [];
   const copied: string[] = [];
   sidebar.setActions({
-    copyPath: (filePath) => copied.push(filePath),
+    copy: (text) => copied.push(text),
+    openFile() {},
     selectFile: (file) => {
       selected.push(file);
-      sidebar.setSelectedPreview(new DiffWorkspaceView(file.path, "diff", "+ok", theme(), file.path));
+      sidebar.setSelectedPreview(new DiffWorkspaceView(file.path, "diff", "+ok", theme(), file.path, file.path));
     },
   });
   sidebar.setFiles([
@@ -114,6 +121,107 @@ test("clicking a changed file selects it instead of copying its path", () => {
   const labels = sidebar.render(40).map(strip);
   assert.ok(labels.some((line) => line.includes("> M src/a.ts")));
   assert.ok(labels.some((line) => line.includes("Preview · src/a.ts") && line.includes("[clear]")));
+});
+
+test("two rapid clicks on the same file row open that path once", () => {
+  const sidebar = attachSidebar();
+  const selected: FileChange[] = [];
+  const opened: string[] = [];
+  sidebar.setActions({
+    copy() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile: (file) => {
+      selected.push(file);
+      sidebar.setSelectedPreview(new DiffWorkspaceView(file.path, "diff", "+ok", theme(), file.path, file.path));
+    },
+  });
+  sidebar.setFiles([
+    { index: " ", worktree: "M", path: "src/a.ts" },
+    { index: "?", worktree: "?", path: "src/b.ts" },
+  ]);
+  sidebar.render(40);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3 })), { handled: true });
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3 })), { handled: true });
+  assert.equal(selected.length, 2);
+  assert.equal(selected[0]?.path, "src/a.ts");
+  assert.deepEqual(opened, ["src/a.ts"]);
+});
+
+test("a late second click on a file row selects it but does not open", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000 });
+  const sidebar = attachSidebar();
+  const selected: FileChange[] = [];
+  const opened: string[] = [];
+  sidebar.setActions({
+    copy() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile: (file) => selected.push(file),
+  });
+  sidebar.setFiles([
+    { index: " ", worktree: "M", path: "src/a.ts" },
+    { index: "?", worktree: "?", path: "src/b.ts" },
+  ]);
+  sidebar.render(40);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3 })), { handled: true });
+  t.mock.timers.tick(DOUBLE_CLICK_MS + 1);
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3 })), { handled: true });
+  assert.equal(selected.length, 2);
+  assert.deepEqual(opened, []);
+});
+
+test("double-clicking a preview with a real path opens that file", () => {
+  const sidebar = attachSidebar();
+  const opened: string[] = [];
+  sidebar.setActions({
+    copy() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile() {},
+  });
+  sidebar.setFiles([{ index: " ", worktree: "M", path: "src/a.ts" }]);
+  sidebar.setSelectedPreview(new DiffWorkspaceView("src/a.ts", "diff", "+ok", theme(), "src/a.ts", "src/a.ts"));
+  const labels = sidebar.render(40).map(strip);
+  const preview = labels.findIndex((line) => line.includes("Preview · src/a.ts"));
+  assert.ok(preview >= 0);
+
+  assert.equal(sidebar.handleMouse(mouse({ type: "click", y: preview + 1 })), undefined);
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: preview + 1 })), { handled: true });
+  assert.deepEqual(opened, ["src/a.ts"]);
+});
+
+test("TUI clickCount opens after the fallback timer would have expired", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000 });
+  const sidebar = attachSidebar();
+  const opened: string[] = [];
+  sidebar.setActions({
+    copy() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile() {},
+  });
+  sidebar.setFiles([{ index: " ", worktree: "M", path: "src/a.ts" }]);
+  sidebar.render(40);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3, clickCount: 1 })), { handled: true });
+  t.mock.timers.tick(DOUBLE_CLICK_MS + 50);
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3, clickCount: 2 })), { handled: true });
+  assert.deepEqual(opened, ["src/a.ts"]);
+});
+
+test("TUI clickCount 1 twice does not open", () => {
+  const sidebar = attachSidebar();
+  const opened: string[] = [];
+  sidebar.setActions({
+    copy() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile() {},
+  });
+  sidebar.setFiles([{ index: " ", worktree: "M", path: "src/a.ts" }]);
+  sidebar.render(40);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3, clickCount: 1 })), { handled: true });
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3, clickCount: 1 })), { handled: true });
+  assert.deepEqual(opened, []);
 });
 
 test("summary leaves blank lines between its sections and shows a disjoint activity breakdown", () => {
@@ -218,4 +326,94 @@ test("clicking a last-turn fact opens that list in Preview", () => {
   const heading = preview.findIndex((line) => line.includes("[clear]"));
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: heading, x: 38 })), { handled: true, render: true });
   assert.equal(sidebar.currentViewId(), undefined);
+});
+
+test("clicking preview [copy] copies the file path and leaves [clear] working", () => {
+  const sidebar = attachSidebar();
+  const copied: string[] = [];
+  sidebar.setActions({
+    copy: (text) => copied.push(text),
+    openFile() {},
+    selectFile() {},
+  });
+  sidebar.setSelectedPreview(new DiffWorkspaceView("src/a.ts", "diff", "+ok", theme(), "src/a.ts", "src/a.ts"));
+  const lines = sidebar.render(40);
+  const heading = lines.findIndex((line) => strip(line).includes("[copy]") && strip(line).includes("[clear]"));
+  assert.ok(heading >= 0);
+  assert.ok(strip(lines[heading] ?? "").includes("Preview · src/a.ts"));
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: heading, x: actionX(lines[heading] ?? "", "[copy]") })), {
+    handled: true,
+  });
+  assert.deepEqual(copied, ["src/a.ts"]);
+  assert.equal(sidebar.currentViewId(), "diff:src/a.ts:diff");
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: heading, x: actionX(lines[heading] ?? "", "[clear]") })), {
+    handled: true,
+    render: true,
+  });
+  assert.equal(sidebar.currentViewId(), undefined);
+});
+
+test("clicking image [copy path] copies the real filepath, not the placeholder", () => {
+  const sidebar = attachSidebar();
+  const copied: string[] = [];
+  sidebar.setActions({
+    copy: (text) => copied.push(text),
+    openFile() {},
+    selectFile() {},
+  });
+  const filePath = "/tmp/pi-clipboard-f2634509-b0a8-489a-85f7-ce9dc69b976a.png";
+  sidebar.setView({
+    id: `image:1:${filePath}`,
+    title: "shot.png",
+    filePath,
+    render: () => ["[image-1]"],
+    invalidate() {},
+  });
+  const lines = sidebar.render(40);
+  const heading = lines.findIndex((line) => strip(line).includes("[copy path]"));
+  assert.ok(heading >= 0);
+  assert.ok(strip(lines[heading] ?? "").includes("[clear]"));
+  assert.ok(!strip(lines[heading] ?? "").includes("[image-1]"));
+
+  assert.deepEqual(sidebar.handleMouse(mouse({
+    type: "click",
+    y: heading,
+    x: actionX(lines[heading] ?? "", "[copy path]"),
+  })), { handled: true });
+  assert.deepEqual(copied, [filePath]);
+});
+
+test("clicking an activity item [copy] copies that item and does not expand it", () => {
+  const sidebar = attachSidebar();
+  const copied: string[] = [];
+  sidebar.setActions({
+    copy: (text) => copied.push(text),
+    openFile() {},
+    selectFile() {},
+  });
+  sidebar.setTurnImpact({
+    revision: 1,
+    toolsCalled: 1,
+    events: [{ id: "r1", toolName: "read", title: "read a.ts", detail: "full read", isError: false, pending: false }],
+  });
+  const summary = sidebar.render(40).map(strip);
+  const lastTurn = summary.indexOf("Last Turn");
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 1 })), { handled: true, render: true });
+
+  const lines = sidebar.render(40);
+  const labels = lines.map(strip);
+  const heading = labels.findIndex((line) => line.includes("Preview · activity"));
+  assert.ok(heading >= 0);
+  assert.ok(labels[heading]?.includes("[clear]"));
+  assert.ok(!labels[heading]?.includes("[copy]"));
+  const row = labels.findIndex((line) => line.includes("▸ read a.ts") && line.includes("[copy]"));
+  assert.ok(row >= 0);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: row, x: actionX(lines[row] ?? "", "[copy]") })), {
+    handled: true,
+  });
+  assert.deepEqual(copied, ["read a.ts\nfull read"]);
+  assert.match(strip(sidebar.render(40)[row] ?? ""), /▸ read a.ts/);
 });
