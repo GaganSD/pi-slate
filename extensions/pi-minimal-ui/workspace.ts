@@ -14,6 +14,7 @@ import { fitImageCells, placeWorkspaceImage, workspacePaneSlots } from "./worksp
 
 export type WorkspaceView = {
   id: string;
+  title?: string;
   render(width: number, height: number): string[];
   invalidate(): void;
   handleClick?(x: number, y: number): boolean;
@@ -22,9 +23,12 @@ export type WorkspaceView = {
 
 export class DiffWorkspaceView implements WorkspaceView {
   readonly id: string;
+  readonly title: string;
   private readonly state: "loading" | "diff" | "empty" | "error";
   private readonly text: string;
   private readonly theme: Theme;
+  private offset = 0;
+  private lastHeight = 1;
   private cached?: { key: string; lines: string[] };
 
   constructor(
@@ -32,8 +36,10 @@ export class DiffWorkspaceView implements WorkspaceView {
     state: "loading" | "diff" | "empty" | "error",
     text: string,
     theme: Theme,
+    title = id,
   ) {
     this.id = `diff:${id}:${state}`;
+    this.title = title;
     this.state = state;
     this.text = text;
     this.theme = theme;
@@ -41,13 +47,23 @@ export class DiffWorkspaceView implements WorkspaceView {
 
   invalidate(): void { this.cached = undefined; }
 
+  handleWheel(delta: number): boolean {
+    if (delta === 0) return false;
+    const maxOffset = Math.max(0, this.sourceLines().length - Math.max(1, this.lastHeight));
+    const next = Math.max(0, Math.min(maxOffset, this.offset + delta));
+    if (next === this.offset) return false;
+    this.offset = next;
+    this.cached = undefined;
+    return true;
+  }
+
   render(width: number, height: number): string[] {
-    const key = `${width}x${height}`;
+    this.lastHeight = Math.max(0, height);
+    const source = this.sourceLines();
+    this.offset = Math.max(0, Math.min(this.offset, Math.max(0, source.length - Math.max(1, this.lastHeight))));
+    const key = `${width}x${height}:${this.offset}`;
     if (this.cached?.key === key) return this.cached.lines;
-    const source = this.state === "loading" ? ["Loading change…"]
-      : this.state === "diff" ? this.text.split(/\r?\n/)
-      : [this.text || (this.state === "empty" ? "No text diff is available." : "Preview unavailable.")];
-    const lines = source.slice(0, Math.max(0, height)).map((line) => {
+    const lines = source.slice(this.offset, this.offset + this.lastHeight).map((line) => {
       const kind = classifyDiffLine(line);
       const tone = kind === "added" ? "toolDiffAdded"
         : kind === "removed" ? "toolDiffRemoved"
@@ -56,14 +72,21 @@ export class DiffWorkspaceView implements WorkspaceView {
         : "toolDiffContext";
       return truncateToWidth(this.theme.fg(tone, line), width, "…");
     });
-    while (lines.length < Math.max(0, height)) lines.push("");
+    while (lines.length < this.lastHeight) lines.push("");
     this.cached = { key, lines };
     return lines;
+  }
+
+  private sourceLines(): string[] {
+    if (this.state === "loading") return ["Loading change…"];
+    if (this.state === "diff") return this.text.split(/\r?\n/);
+    return [this.text || (this.state === "empty" ? "No text diff is available." : "Preview unavailable.")];
   }
 }
 
 export class ImageWorkspaceView implements WorkspaceView {
   readonly id: string;
+  readonly title: string;
   private readonly filePath: string;
   private readonly attachment: ImageAttachment;
   private readonly theme: Theme;
@@ -87,6 +110,7 @@ export class ImageWorkspaceView implements WorkspaceView {
     this.theme = theme;
     this.onCopyPath = onCopyPath;
     this.location = formatImageLocation(filePath, home, number);
+    this.title = this.location.name;
   }
 
   invalidate(): void {
@@ -135,7 +159,7 @@ export class ImageWorkspaceView implements WorkspaceView {
   }
 
   private captionLines(width: number): string[] {
-    return [truncateToWidth(this.theme.fg("muted", `Filename: ${this.location.name}`), width)];
+    return [truncateToWidth(this.theme.fg("muted", this.location.name), width)];
   }
 
   private renderImageLines(width: number, imageHeight: number): string[] {

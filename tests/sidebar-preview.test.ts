@@ -63,6 +63,10 @@ test("DiffWorkspaceView highlights added, removed, and context lines", () => {
   assert.deepEqual(new DiffWorkspaceView("a.ts", "loading", "", theme()).render(80, 1), [
     "[toolDiffContext]Loading change…",
   ]);
+  const long = new DiffWorkspaceView("a.ts", "diff", ["one", "two", "three"].join("\n"), theme(), "a.ts");
+  assert.deepEqual(long.render(80, 2), ["[toolDiffContext]one", "[toolDiffContext]two"]);
+  assert.equal(long.handleWheel(1), true);
+  assert.deepEqual(long.render(80, 2), ["[toolDiffContext]two", "[toolDiffContext]three"]);
 });
 
 test("a selected file preview returns after a temporary image peek", () => {
@@ -86,7 +90,10 @@ test("clicking a changed file selects it instead of copying its path", () => {
   const copied: string[] = [];
   sidebar.setActions({
     copyPath: (filePath) => copied.push(filePath),
-    selectFile: (file) => selected.push(file),
+    selectFile: (file) => {
+      selected.push(file);
+      sidebar.setSelectedPreview(new DiffWorkspaceView(file.path, "diff", "+ok", theme(), file.path));
+    },
   });
   sidebar.setFiles([
     { index: " ", worktree: "M", path: "src/a.ts" },
@@ -100,6 +107,9 @@ test("clicking a changed file selects it instead of copying its path", () => {
   assert.deepEqual(first, { handled: true });
   assert.equal(selected[0]?.path, "src/a.ts");
   assert.deepEqual(copied, []);
+  const labels = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
+  assert.ok(labels.some((line) => line.startsWith("> M src/a.ts")));
+  assert.ok(labels.includes("Preview · src/a.ts"));
 });
 
 test("summary leaves blank lines between its sections", () => {
@@ -160,6 +170,8 @@ test("clicking a last-turn fact opens that list in Preview", () => {
   assert.equal(sidebar.currentViewId(), undefined);
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 1 })), { handled: true, render: true });
   assert.equal(sidebar.currentViewId(), "turn:read");
-  const preview = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "")).join("\n");
-  assert.match(preview, /read a.ts/);
+  const preview = sidebar.render(40).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, ""));
+  assert.ok(preview.includes("Preview · files read"));
+  assert.ok(preview.includes("> 1 file read"));
+  assert.ok(preview.some((line) => /▸ read a.ts/.test(line)));
 });

@@ -10,6 +10,7 @@ import type { WorkspaceView } from "./workspace.ts";
 
 export class TurnLogView implements WorkspaceView {
   readonly id: string;
+  readonly title: string;
   private events: readonly TurnEvent[];
   private readonly filter: TurnFilter;
   private readonly theme: Theme;
@@ -21,6 +22,7 @@ export class TurnLogView implements WorkspaceView {
 
   constructor(filter: TurnFilter, events: readonly TurnEvent[], theme: Theme, onChange?: () => void) {
     this.id = `turn:${filter}`;
+    this.title = filterLabel(filter);
     this.filter = filter;
     this.events = events;
     this.theme = theme;
@@ -70,9 +72,7 @@ export class TurnLogView implements WorkspaceView {
 
   private buildRows(width: number): Array<{ event?: TurnEvent; text: string }> {
     const items = eventsForFilter(this.events, this.filter);
-    const rows: Array<{ event?: TurnEvent; text: string }> = [{
-      text: truncateToWidth(this.theme.fg("muted", `${filterLabel(this.filter)} · ${items.length}`), width, "…"),
-    }];
+    const rows: Array<{ event?: TurnEvent; text: string }> = [];
     if (items.length === 0) {
       rows.push({ text: truncateToWidth(this.theme.fg("dim", "none"), width, "…") });
       return rows;

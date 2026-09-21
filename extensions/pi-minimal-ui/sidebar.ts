@@ -17,6 +17,7 @@ import {
 import {
   clampFilesOffset,
   fileAtPanelRow,
+  fileKey,
   fileMark,
   filesPanel,
   formatFileLabel,
@@ -65,6 +66,8 @@ export class Sidebar implements Component {
   private files: FileChange[] = [];
   private filesRev = 0;
   private filesOffset = 0;
+  private selectedFileKey?: string;
+  private selectedTurn?: TurnFilter;
   private cwd = "";
   private contentCached?: { key: string; lines: string[] };
   private dockCached?: { key: string; lines: string[] };
@@ -113,6 +116,10 @@ export class Sidebar implements Component {
   }
 
   setSelectedPreview(view: WorkspaceView | undefined): void {
+    if (!view) {
+      this.selectedFileKey = undefined;
+      this.selectedTurn = undefined;
+    }
     if (this.selectedView?.id === view?.id) return;
     this.selectedView = view;
     this.contentCached = undefined;
@@ -187,6 +194,8 @@ export class Sidebar implements Component {
     const impactIndex = event.y - impactStart;
     const overImpact = impactStart > 0 && impactIndex >= 0 && impactIndex < filters.length;
     if (event.type === "click" && event.button === "left" && overImpact) {
+      this.selectedFileKey = undefined;
+      this.selectedTurn = filters[impactIndex];
       this.setView(undefined);
       this.setSelectedPreview(this.turnView(filters[impactIndex]!));
       return { handled: true, render: true };
@@ -198,6 +207,8 @@ export class Sidebar implements Component {
     if (event.type === "click" && event.button === "left" && event.y >= filesStart && event.y < filesStart + filesHeight) {
       const file = fileAtPanelRow(this.files, filesHeight, this.filesOffset, event.y - filesStart);
       if (!file) return undefined;
+      this.selectedTurn = undefined;
+      this.selectedFileKey = fileKey(file);
       this.setView(undefined);
       this.actions?.selectFile(file);
       return { handled: true };
@@ -207,6 +218,8 @@ export class Sidebar implements Component {
     const peekBodyStart = peekStart + titleOffset;
     if (event.type === "wheel" && event.y >= peekBodyStart && event.y < peekStart + peekHeight) {
       if (!view?.handleWheel?.(-(event.wheelDelta ?? 0))) return undefined;
+      this.contentCached = undefined;
+      this.tui?.requestRender();
       return { handled: true };
     }
     if (event.type !== "click" || event.button !== "left" || !view?.handleClick) return undefined;
@@ -229,7 +242,7 @@ export class Sidebar implements Component {
       height,
       sidebarDockLines(),
     );
-    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}`;
+    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedTurn ?? ""}`;
     const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${displayedTokenRate(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
       ? this.contentCached.lines
@@ -253,6 +266,8 @@ export class Sidebar implements Component {
     this.files = [];
     this.filesRev = 0;
     this.filesOffset = 0;
+    this.selectedFileKey = undefined;
+    this.selectedTurn = undefined;
     this.cwd = "";
     this.contentCached = undefined;
     this.dockCached = undefined;
@@ -300,7 +315,12 @@ export class Sidebar implements Component {
     if (height < 1) return [];
     const empty = this.decorateLine("", width, theme);
     const files = this.filesLines(width, filesHeight, theme);
-    const impact = formatTurnImpact(this.turnImpact).map((line) => this.body(line, width, theme, "muted"));
+    const filters = turnFilters();
+    const impact = formatTurnImpact(this.turnImpact).map((line, index) => {
+      const selected = filters[index] === this.selectedTurn;
+      if (selected) return this.decorateLine(theme ? theme.bold(theme.fg("muted", `> ${line}`)) : `> ${line}`, width, theme);
+      return this.body(line, width, theme, "muted");
+    });
     const extra = Math.max(0, height - (1 + files.length + 1 + impact.length));
     const lines = [this.heading("Summary", width, theme)];
     if (extra > 0) lines.push(empty);
@@ -318,10 +338,11 @@ export class Sidebar implements Component {
 
   private peekLines(width: number, maxHeight: number, theme: Theme | undefined): string[] {
     if (maxHeight < 1) return [];
-    const lines = [this.heading("Preview", width, theme)];
+    const view = this.effectiveView();
+    const heading = view?.title ? `Preview · ${view.title}` : "Preview";
+    const lines = [this.heading(heading, width, theme)];
     const bodyHeight = maxHeight - 1;
     if (bodyHeight < 1) return lines;
-    const view = this.effectiveView();
     if (!view) {
       lines.push(this.body("none", width, theme, "dim"));
       return this.padBlock(lines, maxHeight, width, theme);
@@ -345,8 +366,11 @@ export class Sidebar implements Component {
       if (line.type === "empty") return this.body("none", width, theme, "dim");
       const mark = fileMark(line.item);
       const label = formatFileLabel(line.item);
-      if (!theme) return this.decorateLine(`${mark.mark} ${label}`, width, theme);
-      return this.decorateLine(`${theme.fg(mark.tone, mark.mark)} ${theme.fg("muted", label)}`, width, theme);
+      const selected = fileKey(line.item) === this.selectedFileKey;
+      const text = selected ? `> ${mark.mark} ${label}` : `${mark.mark} ${label}`;
+      if (!theme) return this.decorateLine(text, width, theme);
+      const colored = `${theme.fg(mark.tone, mark.mark)} ${theme.fg("muted", label)}`;
+      return this.decorateLine(selected ? theme.bold(`> ${colored}`) : colored, width, theme);
     });
   }
 

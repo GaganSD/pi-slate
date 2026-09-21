@@ -20,6 +20,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { installImagePlaceholders } from "./image-placeholders.ts";
 import { GitStatusPoller } from "./git-status.ts";
+import { fileKey, formatFileLabel } from "./files-modified.ts";
 import { GitDiffPreviewLoader } from "./git-diff.ts";
 import { Sidebar } from "./sidebar.ts";
 import { DiffWorkspaceView } from "./workspace.ts";
@@ -232,16 +233,18 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
         );
       },
       selectFile: (file) => {
-        const selectionId = `${file.index}${file.worktree}:${file.path}:${file.origPath ?? ""}`;
+        const selectionId = fileKey(file);
+        const title = formatFileLabel(file);
         const cached = diffs.peek(ctx.cwd, file, fileSnapshot);
         sidebar.setSelectedPreview(new DiffWorkspaceView(
           selectionId,
           cached?.state ?? "loading",
           cached?.text ?? "",
           ctx.ui.theme,
+          title,
         ));
         void diffs.select(ctx.cwd, file, fileSnapshot, (result) => {
-          sidebar.setSelectedPreview(new DiffWorkspaceView(selectionId, result.state, result.text, ctx.ui.theme));
+          sidebar.setSelectedPreview(new DiffWorkspaceView(selectionId, result.state, result.text, ctx.ui.theme, title));
         });
       },
     });

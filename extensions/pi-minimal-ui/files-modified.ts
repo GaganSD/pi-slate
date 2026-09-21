@@ -64,6 +64,10 @@ export function formatFileLabel(change: FileChange): string {
   return change.origPath ? `${change.origPath} \u2192 ${change.path}` : change.path;
 }
 
+export function fileKey(change: FileChange): string {
+  return `${change.index}${change.worktree}:${change.path}:${change.origPath ?? ""}`;
+}
+
 export function clampFilesOffset(offset: number, fileCount: number, bodyHeight: number): number {
   const maxOffset = Math.max(0, fileCount - Math.max(0, bodyHeight));
   if (!Number.isFinite(offset)) return 0;
