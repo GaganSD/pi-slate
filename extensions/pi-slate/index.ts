@@ -40,12 +40,16 @@ import {
   modelLabel,
   parseMcpConnectedCount,
   parseSidebarWidth,
+  parseSidebarWidthArg,
   parseSlateArgs,
   slateArgumentCompletions,
   SLATE_USAGE,
+  SIDEBAR_MIN_WIDTH,
   SIDEBAR_WIDTH_MEDIUM,
   SIDEBAR_WIDTH_NARROW,
   SIDEBAR_WIDTH_WIDE,
+  withCurrent,
+  withoutCurrent,
 } from "./layout.ts";
 
 type SlateConfig = {
@@ -408,31 +412,59 @@ export default function piSlate(pi: ExtensionAPI): void {
   };
 
   const pickDensity = async (ctx: ExtensionContext): Promise<SlateConfig["density"] | undefined> => {
-    const value = await ctx.ui.select("Density", ["Comfortable", "Compact"]);
-    return value ? value.toLowerCase() as SlateConfig["density"] : undefined;
+    const value = await ctx.ui.select("Density", [
+      withCurrent("Comfortable", config.density === "comfortable"),
+      withCurrent("Compact", config.density === "compact"),
+    ]);
+    const key = value ? withoutCurrent(value) : undefined;
+    if (key === "Comfortable") return "comfortable";
+    if (key === "Compact") return "compact";
+    return undefined;
   };
 
   const pickFooter = async (ctx: ExtensionContext): Promise<SlateConfig["footer"] | undefined> => {
-    const value = await ctx.ui.select("Footer", ["Standard", "Minimal"]);
-    return value ? value.toLowerCase() as SlateConfig["footer"] : undefined;
+    const value = await ctx.ui.select("Footer", [
+      withCurrent("Standard", config.footer === "standard"),
+      withCurrent("Minimal", config.footer === "minimal"),
+    ]);
+    const key = value ? withoutCurrent(value) : undefined;
+    if (key === "Standard") return "standard";
+    if (key === "Minimal") return "minimal";
+    return undefined;
   };
 
   const pickWidth = async (ctx: ExtensionContext): Promise<{ picked: true; width?: number } | undefined> => {
+    const defaultLabel = "Default";
+    const narrowLabel = `Narrow (${SIDEBAR_WIDTH_NARROW})`;
+    const mediumLabel = `Medium (${SIDEBAR_WIDTH_MEDIUM})`;
+    const wideLabel = `Wide (${SIDEBAR_WIDTH_WIDE})`;
+    const customLabel = "Custom…";
     const choice = await ctx.ui.select("Sidebar width", [
-      "Default (20%)",
-      `Narrow (${SIDEBAR_WIDTH_NARROW})`,
-      `Medium (${SIDEBAR_WIDTH_MEDIUM})`,
-      `Wide (${SIDEBAR_WIDTH_WIDE})`,
+      withCurrent(defaultLabel, config.sidebarWidth === undefined),
+      withCurrent(narrowLabel, config.sidebarWidth === SIDEBAR_WIDTH_NARROW),
+      withCurrent(mediumLabel, config.sidebarWidth === SIDEBAR_WIDTH_MEDIUM),
+      withCurrent(wideLabel, config.sidebarWidth === SIDEBAR_WIDTH_WIDE),
+      customLabel,
     ]);
     if (!choice) return undefined;
-    if (choice.startsWith("Default")) return { picked: true };
-    if (choice.startsWith("Narrow")) return { picked: true, width: SIDEBAR_WIDTH_NARROW };
-    if (choice.startsWith("Medium")) return { picked: true, width: SIDEBAR_WIDTH_MEDIUM };
-    return { picked: true, width: SIDEBAR_WIDTH_WIDE };
+    const key = withoutCurrent(choice);
+    if (key === defaultLabel) return { picked: true };
+    if (key === narrowLabel) return { picked: true, width: SIDEBAR_WIDTH_NARROW };
+    if (key === mediumLabel) return { picked: true, width: SIDEBAR_WIDTH_MEDIUM };
+    if (key === wideLabel) return { picked: true, width: SIDEBAR_WIDTH_WIDE };
+    if (key !== customLabel) return undefined;
+    const typed = await ctx.ui.input("Sidebar columns", String(SIDEBAR_MIN_WIDTH));
+    if (!typed) return undefined;
+    const parsed = parseSidebarWidthArg(typed);
+    if (!parsed.ok || parsed.width === undefined) {
+      ctx.ui.notify(SLATE_USAGE, "error");
+      return undefined;
+    }
+    return { picked: true, width: parsed.width };
   };
 
   pi.registerCommand("slate", {
-    description: "Configure pi-slate",
+    description: "Density, footer, or sidebar width",
     getArgumentCompletions: slateArgumentCompletions,
     handler: async (args, ctx) => {
       const parsed = parseSlateArgs(args);
@@ -443,9 +475,11 @@ export default function piSlate(pi: ExtensionAPI): void {
 
       let kind = parsed.kind;
       if (kind === "menu") {
-        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Width"]);
-        if (!setting) return;
-        kind = setting === "Density" ? "density" : setting === "Footer" ? "footer" : "width-menu";
+        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Sidebar width"]);
+        if (setting === "Density") kind = "density";
+        else if (setting === "Footer") kind = "footer";
+        else if (setting === "Sidebar width") kind = "width-menu";
+        else return;
       }
 
       if (kind === "density") {

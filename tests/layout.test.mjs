@@ -25,6 +25,8 @@ import {
   parseSidebarWidthArg,
   parseSlateArgs,
   slateArgumentCompletions,
+  withCurrent,
+  withoutCurrent,
   sidebarHandleColumn,
   sidebarWidthFromScreenX,
   SIDEBAR_WIDTH_MEDIUM,
@@ -115,6 +117,10 @@ test("a preferred sidebar width is clamped and hidden on narrow terminals", () =
   assert.deepEqual(parseSidebarWidthArg("medium"), { ok: true, width: SIDEBAR_WIDTH_MEDIUM });
   assert.deepEqual(parseSidebarWidthArg("wide"), { ok: true, width: SIDEBAR_WIDTH_WIDE });
   assert.deepEqual(parseSidebarWidthArg("48"), { ok: true, width: 48 });
+  assert.deepEqual(parseSidebarWidthArg("28"), { ok: true, width: 28 });
+  assert.deepEqual(parseSidebarWidthArg("27"), { ok: false });
+  assert.deepEqual(parseSidebarWidthArg("1e3"), { ok: false });
+  assert.deepEqual(parseSidebarWidthArg("0x20"), { ok: false });
   assert.deepEqual(parseSidebarWidthArg("nope"), { ok: false });
 });
 
@@ -134,6 +140,9 @@ test("/slate args route density, footer, and width", () => {
     [{ value: "density", label: "density" }, { value: "density comfortable", label: "density comfortable" }, { value: "density compact", label: "density compact" }],
   );
   assert.equal(slateArgumentCompletions("nope"), null);
+  assert.equal(withCurrent("Compact", true), "Compact (current)");
+  assert.equal(withoutCurrent("Compact (current)"), "Compact");
+  assert.equal(withoutCurrent("Sidebar width"), "Sidebar width");
 });
 
 test("sidebar rows pin the footer dock and give the rest to content", () => {

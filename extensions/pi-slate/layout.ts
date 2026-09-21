@@ -141,12 +141,22 @@ export function parseSidebarWidthArg(raw: string): { ok: true; width?: number } 
   if (value === "narrow") return { ok: true, width: SIDEBAR_WIDTH_NARROW };
   if (value === "medium") return { ok: true, width: SIDEBAR_WIDTH_MEDIUM };
   if (value === "wide") return { ok: true, width: SIDEBAR_WIDTH_WIDE };
-  const columns = parseSidebarWidth(Number(value));
-  if (columns === undefined) return { ok: false };
+  if (!/^\d+$/.test(value)) return { ok: false };
+  const columns = Number(value);
+  if (columns < SIDEBAR_MIN_WIDTH) return { ok: false };
   return { ok: true, width: columns };
 }
 
-export const SLATE_USAGE = "Usage: /slate [density|footer|width] [value]";
+export const SLATE_USAGE =
+  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<columns>]";
+
+export function withCurrent(label: string, current: boolean): string {
+  return current ? `${label} (current)` : label;
+}
+
+export function withoutCurrent(label: string): string {
+  return label.endsWith(" (current)") ? label.slice(0, -" (current)".length) : label;
+}
 
 const SLATE_COMPLETIONS = [
   "density",
