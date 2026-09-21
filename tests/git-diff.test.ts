@@ -116,10 +116,18 @@ test("preview loader caches by snapshot and ignores stale rapid clicks", async (
   assert.deepEqual(applied, ["b-cached:diff"]);
   assert.deepEqual(runs, ["a.ts", "b.ts"]);
 
+  loader.clear();
+  applied.length = 0;
+  const refreshed = loader.select("/repo", file("b.ts"), "s1", apply("b-refreshed"));
+  gates.get("b.ts")?.({ stdout: "+b2\n", exitCode: 1 });
+  await refreshed;
+  assert.deepEqual(applied, ["b-refreshed:diff"]);
+  assert.equal(runs.length, 3);
+
   applied.length = 0;
   const third = loader.select("/repo", file("b.ts"), "s2", apply("b-fresh"));
-  gates.get("b.ts")?.({ stdout: "+b2\n", exitCode: 1 });
+  gates.get("b.ts")?.({ stdout: "+b3\n", exitCode: 1 });
   await third;
   assert.deepEqual(applied, ["b-fresh:diff"]);
-  assert.equal(runs.length, 3);
+  assert.equal(runs.length, 4);
 });

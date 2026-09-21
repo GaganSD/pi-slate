@@ -59,7 +59,7 @@ export function formatContextTokens(
   percent: number | null | undefined,
   rate: number | null | undefined,
 ): string {
-  return `${formatTokenCount(tokens)} (${formatPercent(percent)}) · ${formatTokenRate(rate)}`;
+  return `${formatTokenCount(tokens)} · ${formatPercent(percent)} used · ${formatTokenRate(rate)}`;
 }
 
 export const MCP_STATUS_EVENT = "pi-mcp-adapter/status/v1";

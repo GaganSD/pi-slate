@@ -24,10 +24,10 @@ Project-local: `pi install -l git:github.com/GaganSD/pi-slate`.
 
 - **Sidebar** — Summary (Files Changed, Last Turn), Preview, Context. Drag the left `│` to resize; width is saved in `~/.pi/agent/pi-slate.json`.
 - `/slate` — density, footer, and sidebar width. No args opens a picker. `/slate width 30` is 30% of the terminal (floor 28 columns). `narrow` is that floor on every screen.
-- Click a changed file or Last Turn count to open Preview. Click a Last Turn row again for the full tool message.
+- Click a changed file or a Last Turn activity row to open Preview. Click an activity row in Preview to expand the full tool message.
 - Put the cursor on an `[image-N]` token to peek it. Image terminals render the file; others get text.
 
-Files Changed reads local `git status` after Pi work. It does not poll while idle.
+Files Changed refreshes local `git status` after Pi tools and background subagents finish. It does not poll while idle.
 
 Fullscreen TUI only. Narrow or regular TUI falls back to Pi's overlay. Non-interactive modes are unchanged.
 

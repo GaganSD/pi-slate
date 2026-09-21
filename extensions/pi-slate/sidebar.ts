@@ -36,7 +36,7 @@ import {
 import { installSidebarSplit } from "./sidebar-split.ts";
 import type { WorkspaceView } from "./workspace.ts";
 import { TurnLogView } from "./turn-log.ts";
-import { formatTurnImpact, TURN_FILTERS, type TurnFilter, type TurnImpactSnapshot } from "./turn-impact.ts";
+import { formatTurnImpact, type TurnImpactSnapshot } from "./turn-impact.ts";
 import {
   filesWidgetDesiredHeight,
   SIDEBAR_DOCK_LINES,
@@ -75,16 +75,16 @@ export class Sidebar implements Component {
   private selectedView?: WorkspaceView;
   private transientView?: WorkspaceView;
   private turnImpact: TurnImpactSnapshot = emptyTurnImpact();
-  private turnViews = new Map<TurnFilter, TurnLogView>();
+  private turnView?: TurnLogView;
   private contextData: SidebarContextData = { tokens: null, percent: null, tokensPerSec: 0, spend: 0 };
-  private lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0, impactStart: 0 };
+  private lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0, impactStart: 0, impactHeight: 0 };
   private mcpConnected: number | null = null;
   private skillsLoaded = 0;
   private files: FileChange[] = [];
   private filesRev = 0;
   private filesOffset = 0;
   private selectedFileKey?: string;
-  private selectedTurn?: TurnFilter;
+  private selectedActivityRow?: number;
   private lastClear?: { y: number; x0: number; x1: number };
   private cwd = "";
   private home = homedir();
@@ -150,7 +150,7 @@ export class Sidebar implements Component {
   setSelectedPreview(view: WorkspaceView | undefined): void {
     if (!view) {
       this.selectedFileKey = undefined;
-      this.selectedTurn = undefined;
+      this.selectedActivityRow = undefined;
     }
     if (this.selectedView?.id === view?.id) return;
     this.selectedView = view;
@@ -161,7 +161,7 @@ export class Sidebar implements Component {
   setTurnImpact(impact: TurnImpactSnapshot): void {
     if (this.turnImpact.revision === impact.revision) return;
     this.turnImpact = impact;
-    for (const view of this.turnViews.values()) view.setEvents(impact.events);
+    this.turnView?.setEvents(impact.events);
     this.contentCached = undefined;
     this.tui?.requestRender();
   }
@@ -185,7 +185,7 @@ export class Sidebar implements Component {
   setCwd(cwd: string): void {
     if (this.cwd === cwd) return;
     this.cwd = cwd;
-    for (const view of this.turnViews.values()) view.setPlace(cwd, this.home);
+    this.turnView?.setPlace(cwd, this.home);
     this.contentCached = undefined;
   }
 
@@ -232,15 +232,15 @@ export class Sidebar implements Component {
     const resize = this.handleResizeMouse(event, isSidebarResizeHandle(event));
     if (resize) return resize;
 
-    const { summaryHeight, filesHeight, dividerHeight, peekHeight, filesStart, impactStart } = this.lastSlots;
+    const { summaryHeight, filesHeight, dividerHeight, peekHeight, filesStart, impactStart, impactHeight } = this.lastSlots;
     const peekStart = summaryHeight + dividerHeight;
     const impactIndex = event.y - impactStart;
-    const overImpact = impactStart > 0 && impactIndex >= 0 && impactIndex < TURN_FILTERS.length;
+    const overImpact = impactStart > 0 && impactIndex >= 0 && impactIndex < impactHeight;
     if (event.type === "click" && event.button === "left" && overImpact) {
       this.selectedFileKey = undefined;
-      this.selectedTurn = TURN_FILTERS[impactIndex];
+      this.selectedActivityRow = impactIndex;
       this.setView(undefined);
-      this.setSelectedPreview(this.turnView(TURN_FILTERS[impactIndex]!));
+      this.setSelectedPreview(this.activityView());
       return { handled: true, render: true };
     }
     if (event.type === "wheel" && event.y >= filesStart && event.y < filesStart + filesHeight) {
@@ -250,7 +250,7 @@ export class Sidebar implements Component {
     if (event.type === "click" && event.button === "left" && event.y >= filesStart && event.y < filesStart + filesHeight) {
       const file = fileAtPanelRow(this.files, filesHeight, this.filesOffset, event.y - filesStart);
       if (!file) return undefined;
-      this.selectedTurn = undefined;
+      this.selectedActivityRow = undefined;
       this.selectedFileKey = fileKey(file);
       this.setView(undefined);
       this.actions?.selectFile(file);
@@ -292,7 +292,7 @@ export class Sidebar implements Component {
     const theme = this.theme;
     const height = Math.max(1, this.tui?.terminal.rows ?? 1);
     const { contentHeight, dockHeight } = sidebarRowSlots(height, SIDEBAR_DOCK_LINES);
-    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedTurn ?? ""}`;
+    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedActivityRow ?? ""}`;
     const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${Math.round(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
       ? this.contentCached.lines
@@ -320,13 +320,13 @@ export class Sidebar implements Component {
     this.filesRev = 0;
     this.filesOffset = 0;
     this.selectedFileKey = undefined;
-    this.selectedTurn = undefined;
+    this.selectedActivityRow = undefined;
     this.lastClear = undefined;
     this.cwd = "";
     this.contentCached = undefined;
     this.dockCached = undefined;
-    this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0, impactStart: 0 };
-    this.turnViews.clear();
+    this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0, impactStart: 0, impactHeight: 0 };
+    this.turnView = undefined;
     this.tui = undefined;
     this.theme = undefined;
   }
@@ -353,11 +353,11 @@ export class Sidebar implements Component {
 
   private contentLines(width: number, height: number, theme: Theme | undefined): string[] {
     if (height < 1) {
-      this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0, impactStart: 0 };
+      this.lastSlots = { summaryHeight: 0, peekHeight: 0, dividerHeight: 0, filesHeight: 0, filesStart: 0, impactStart: 0, impactHeight: 0 };
       return [];
     }
     const slots = splitSidebarContent(height, filesWidgetDesiredHeight(this.files.length));
-    this.lastSlots = { ...slots, filesStart: 0, impactStart: 0 };
+    this.lastSlots = { ...slots, filesStart: 0, impactStart: 0, impactHeight: 0 };
     const lines: string[] = [...this.summaryLines(width, slots.summaryHeight, slots.filesHeight, theme)];
     this.pushRule(lines, slots.dividerHeight, width, theme);
     lines.push(...this.peekLines(width, slots.peekHeight, theme));
@@ -369,10 +369,11 @@ export class Sidebar implements Component {
     const empty = this.decorateLine("", width, theme);
     const files = this.filesLines(width, filesHeight, theme);
     const impact = formatTurnImpact(this.turnImpact).map((line, index) => {
-      const selected = TURN_FILTERS[index] === this.selectedTurn;
+      const selected = index === this.selectedActivityRow;
+      const clickable = this.turnImpact.toolsCalled > 0;
       const text = `${selected ? "> " : "  "}${line}`;
       if (selected) return this.decorateLine(theme ? theme.bold(theme.fg("muted", text)) : text, width, theme);
-      return this.body(text, width, theme, "muted");
+      return this.body(text, width, theme, clickable ? "muted" : "dim");
     });
     const extra = Math.max(0, height - (1 + files.length + 1 + impact.length));
     const lines = [this.heading("Summary", width, theme)];
@@ -381,11 +382,14 @@ export class Sidebar implements Component {
     lines.push(...files);
     if (extra > 1) lines.push(empty);
     if (lines.length < height) lines.push(this.heading("Last Turn", width, theme));
-    this.lastSlots = { ...this.lastSlots, impactStart: lines.length };
+    const impactStart = lines.length;
+    let impactHeight = 0;
     for (const line of impact) {
       if (lines.length >= height) break;
       lines.push(line);
+      if (this.turnImpact.toolsCalled > 0) impactHeight += 1;
     }
+    this.lastSlots = { ...this.lastSlots, impactStart, impactHeight };
     return this.padBlock(lines, height, width, theme);
   }
 
@@ -427,16 +431,14 @@ export class Sidebar implements Component {
     });
   }
 
-  private turnView(filter: TurnFilter): TurnLogView {
-    let view = this.turnViews.get(filter);
-    if (!view) {
-      view = new TurnLogView(filter, this.turnImpact.events, this.requireTheme(), () => {
+  private activityView(): TurnLogView {
+    if (!this.turnView) {
+      this.turnView = new TurnLogView(this.turnImpact.events, this.requireTheme(), () => {
         this.contentCached = undefined;
         this.tui?.requestRender();
       }, this.cwd, this.home);
-      this.turnViews.set(filter, view);
     }
-    return view;
+    return this.turnView;
   }
 
   private scrollFiles(delta: number): boolean {
@@ -623,5 +625,5 @@ class ResizeGuide implements Component {
 }
 
 function emptyTurnImpact(): TurnImpactSnapshot {
-  return { revision: 0, filesRead: 0, toolsCalled: 0, shellCommands: 0, subagentsSpawned: 0, events: [] };
+  return { revision: 0, toolsCalled: 0, events: [] };
 }

@@ -23,9 +23,9 @@ export function parsePorcelain(output: string): FileChange[] {
     const path = part.slice(3);
     if (!path) continue;
     if (isRenameOrCopy(index, worktree)) {
-      const next = parts[i + 1];
-      if (next) {
-        files.push({ index, worktree, path: next, origPath: path });
+      const original = parts[i + 1];
+      if (original) {
+        files.push({ index, worktree, path, origPath: original });
         i += 1;
         continue;
       }
