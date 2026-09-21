@@ -13,6 +13,7 @@ import {
   type SidebarSettings,
 } from "./config.ts";
 import { GitStatusPoller } from "./git-status.ts";
+import { installImagePlaceholders } from "./image-placeholders.ts";
 import { countSkillCommands, MCP_STATUS_EVENT, parseMcpConnectedCount } from "./layout.ts";
 import { Sidebar } from "./sidebar.ts";
 import { estimateAssistantTokens, TokenRateTracker } from "./token-rate.ts";
@@ -27,6 +28,7 @@ class AttachHook implements Component {
 
 export default function sidebarExtension(pi: ExtensionAPI): void {
   const sidebar = new Sidebar();
+  const images = installImagePlaceholders(pi, sidebar);
   const files = new GitStatusPoller((changes) => sidebar.setFiles(changes));
   const tokenRate = new TokenRateTracker();
   let loaded = loadSidebarConfig();
@@ -141,6 +143,7 @@ export default function sidebarExtension(pi: ExtensionAPI): void {
   });
   pi.on("session_shutdown", () => {
     tokenRate.dispose();
+    images.dispose();
     files.dispose();
     sidebar.dispose();
     requestRender(true);
