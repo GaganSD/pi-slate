@@ -23,7 +23,7 @@ test("parsePorcelain reads status, untracked, and rename records", () => {
     { index: "M", worktree: " ", path: "src/b.ts" },
     { index: "?", worktree: "?", path: "scratch.md" },
   ]);
-  assert.deepEqual(parsePorcelain("R  old.ts\0new.ts\0"), [
+  assert.deepEqual(parsePorcelain("R  new.ts\0old.ts\0"), [
     { index: "R", worktree: " ", path: "new.ts", origPath: "old.ts" },
   ]);
 });

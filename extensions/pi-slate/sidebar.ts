@@ -84,7 +84,7 @@ export class Sidebar implements Component {
   private filesRev = 0;
   private filesOffset = 0;
   private selectedFileKey?: string;
-  private selectedTurn = false;
+  private selectedActivityRow?: number;
   private lastClear?: { y: number; x0: number; x1: number };
   private cwd = "";
   private home = homedir();
@@ -150,7 +150,7 @@ export class Sidebar implements Component {
   setSelectedPreview(view: WorkspaceView | undefined): void {
     if (!view) {
       this.selectedFileKey = undefined;
-      this.selectedTurn = false;
+      this.selectedActivityRow = undefined;
     }
     if (this.selectedView?.id === view?.id) return;
     this.selectedView = view;
@@ -234,10 +234,11 @@ export class Sidebar implements Component {
 
     const { summaryHeight, filesHeight, dividerHeight, peekHeight, filesStart, impactStart, impactHeight } = this.lastSlots;
     const peekStart = summaryHeight + dividerHeight;
-    const overImpact = impactStart > 0 && impactHeight > 0 && event.y === impactStart;
+    const impactIndex = event.y - impactStart;
+    const overImpact = impactStart > 0 && impactIndex >= 0 && impactIndex < impactHeight;
     if (event.type === "click" && event.button === "left" && overImpact) {
       this.selectedFileKey = undefined;
-      this.selectedTurn = true;
+      this.selectedActivityRow = impactIndex;
       this.setView(undefined);
       this.setSelectedPreview(this.activityView());
       return { handled: true, render: true };
@@ -249,7 +250,7 @@ export class Sidebar implements Component {
     if (event.type === "click" && event.button === "left" && event.y >= filesStart && event.y < filesStart + filesHeight) {
       const file = fileAtPanelRow(this.files, filesHeight, this.filesOffset, event.y - filesStart);
       if (!file) return undefined;
-      this.selectedTurn = false;
+      this.selectedActivityRow = undefined;
       this.selectedFileKey = fileKey(file);
       this.setView(undefined);
       this.actions?.selectFile(file);
@@ -291,7 +292,7 @@ export class Sidebar implements Component {
     const theme = this.theme;
     const height = Math.max(1, this.tui?.terminal.rows ?? 1);
     const { contentHeight, dockHeight } = sidebarRowSlots(height, SIDEBAR_DOCK_LINES);
-    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedTurn ?? ""}`;
+    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedActivityRow ?? ""}`;
     const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${Math.round(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
       ? this.contentCached.lines
@@ -319,7 +320,7 @@ export class Sidebar implements Component {
     this.filesRev = 0;
     this.filesOffset = 0;
     this.selectedFileKey = undefined;
-    this.selectedTurn = false;
+    this.selectedActivityRow = undefined;
     this.lastClear = undefined;
     this.cwd = "";
     this.contentCached = undefined;
@@ -368,8 +369,8 @@ export class Sidebar implements Component {
     const empty = this.decorateLine("", width, theme);
     const files = this.filesLines(width, filesHeight, theme);
     const impact = formatTurnImpact(this.turnImpact).map((line, index) => {
-      const selected = index === 0 && this.selectedTurn;
-      const clickable = index === 0 && this.turnImpact.toolsCalled > 0;
+      const selected = index === this.selectedActivityRow;
+      const clickable = this.turnImpact.toolsCalled > 0;
       const text = `${selected ? "> " : "  "}${line}`;
       if (selected) return this.decorateLine(theme ? theme.bold(theme.fg("muted", text)) : text, width, theme);
       return this.body(text, width, theme, clickable ? "muted" : "dim");
@@ -383,10 +384,10 @@ export class Sidebar implements Component {
     if (lines.length < height) lines.push(this.heading("Last Turn", width, theme));
     const impactStart = lines.length;
     let impactHeight = 0;
-    for (const [index, line] of impact.entries()) {
+    for (const line of impact) {
       if (lines.length >= height) break;
       lines.push(line);
-      if (index === 0 && this.turnImpact.toolsCalled > 0) impactHeight = 1;
+      if (this.turnImpact.toolsCalled > 0) impactHeight += 1;
     }
     this.lastSlots = { ...this.lastSlots, impactStart, impactHeight };
     return this.padBlock(lines, height, width, theme);

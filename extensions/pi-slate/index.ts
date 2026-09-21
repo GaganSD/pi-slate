@@ -200,6 +200,10 @@ export default function piSlate(pi: ExtensionAPI): void {
     sidebar.setFiles(changes);
   });
   const diffs = new GitDiffPreviewLoader();
+  const refreshFiles = (): void => {
+    diffs.clear();
+    void files.refresh();
+  };
   const turnImpact = new TurnImpactTracker();
   let config = loadConfig();
   let currentContext: ExtensionContext | undefined;
@@ -239,6 +243,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   pi.events.on(MCP_STATUS_EVENT, (data) => {
     sidebar.setMcpConnected(parseMcpConnectedCount(data));
   });
+  pi.events.on("subagent:async-complete", refreshFiles);
   pi.on("resources_discover", () => {
     queueMicrotask(() => sidebar.setSkillsLoaded(countSkillCommands(pi.getCommands())));
   });
@@ -370,17 +375,17 @@ export default function piSlate(pi: ExtensionAPI): void {
       result: event.result,
       toolName: event.toolName,
     }));
-    void files.refresh();
+    refreshFiles();
   });
   pi.on("turn_end", (_event, ctx) => {
     currentContext = ctx;
     syncSidebar(ctx);
-    void files.refresh();
+    refreshFiles();
   });
   pi.on("agent_settled", (_event, ctx) => {
     currentContext = ctx;
     syncSidebar(ctx);
-    void files.refresh();
+    refreshFiles();
   });
   pi.on("session_compact", (_event, ctx) => {
     currentContext = ctx;

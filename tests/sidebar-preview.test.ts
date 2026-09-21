@@ -140,8 +140,12 @@ test("summary leaves blank lines between its sections and shows a disjoint activ
   assert.equal(labels[lastTurn - 1], "");
   assert.equal(labels[lastTurn + 1], "  6 actions");
   assert.equal(labels[lastTurn + 2], "  1 inspected · 5 ran");
-  assert.equal(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 2 })), undefined);
-  assert.equal(sidebar.currentViewId(), undefined);
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: lastTurn + 2 })), { handled: true, render: true });
+  assert.equal(sidebar.currentViewId(), "turn:activity");
+  const selected = sidebar.render(40).map(strip);
+  assert.equal(selected[lastTurn + 1], "  6 actions");
+  assert.equal(selected[lastTurn + 2], "> 1 inspected · 5 ran");
+  assert.ok(selected.some((line) => line.includes("Preview · activity")));
 });
 
 test("empty activity is intentional, non-clickable, and narrow summaries stay within the sidebar", () => {
