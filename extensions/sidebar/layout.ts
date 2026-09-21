@@ -20,6 +20,14 @@ export const DEFAULT_WIDTH_LAYOUT: WidthLayout = {
 export const SIDEBAR_MIN_TERMINAL_WIDTH = DEFAULT_MIN_TERMINAL_WIDTH;
 export const SIDEBAR_MIN_WIDTH = DEFAULT_MIN_WIDTH;
 
+export function compactPath(cwd: string | undefined, home?: string): string {
+  if (!cwd) return "";
+  if (home && (cwd === home || cwd.startsWith(`${home}/`))) {
+    return `~${cwd.slice(home.length)}`;
+  }
+  return cwd;
+}
+
 export function formatCount(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   if (value >= 1_000_000) return `${trimFixed(value / 1_000_000)}m`;
