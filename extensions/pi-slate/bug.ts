@@ -56,10 +56,6 @@ export function openExternalArgs(target: string, platform = process.platform): {
   return { command: "xdg-open", args: [target] };
 }
 
-export function openUrlArgs(url: string, platform = process.platform): { command: string; args: string[] } {
-  return openExternalArgs(url, platform);
-}
-
 export function ghCreateIssueArgs(title: string, body: string): string[] {
   return ["issue", "create", "--repo", SLATE_REPO, "--title", title, "--body", body];
 }

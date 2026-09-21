@@ -58,7 +58,7 @@ export class TurnLogView implements WorkspaceView {
   copyTextAt(x: number, y: number): string | undefined {
     const row = this.rows[this.offset + y];
     if (!row?.event || !this.copyHit(row, x)) return undefined;
-    return turnEventCopyText(row.event);
+    return [row.event.title.trim(), row.event.detail.trim()].filter(Boolean).join("\n");
   }
 
   handleWheel(delta: number): boolean {
@@ -114,13 +114,6 @@ export class TurnLogView implements WorkspaceView {
   private copyHit(row: { copyX0?: number; copyX1?: number }, x: number): boolean {
     return row.copyX0 !== undefined && row.copyX1 !== undefined && x >= row.copyX0 && x < row.copyX1;
   }
-}
-
-export function turnEventCopyText(event: TurnEvent): string {
-  const title = event.title.trim();
-  const detail = event.detail.trim();
-  if (title && detail) return `${title}\n${detail}`;
-  return title || detail;
 }
 
 export function eventTone(event: TurnEvent): "error" | "warning" | "accent" | "success" | "muted" {

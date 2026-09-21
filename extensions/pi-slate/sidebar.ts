@@ -60,8 +60,7 @@ export type SidebarContextData = {
 export const DOUBLE_CLICK_MS = 400;
 
 export type SidebarActions = {
-  copyPath(filePath: string): void;
-  copyText?(text: string): void;
+  copy(text: string): void;
   openFile(filePath: string): void;
   selectFile(file: FileChange): void;
   persistWidth?(columns: number | undefined): void;
@@ -141,18 +140,6 @@ export class Sidebar implements Component {
 
   setActions(actions: SidebarActions): void {
     this.actions = actions;
-  }
-
-  copyPath(filePath: string): void {
-    this.actions?.copyPath(filePath);
-  }
-
-  copyText(text: string): void {
-    this.actions?.copyText?.(text);
-  }
-
-  openFile(filePath: string): void {
-    this.actions?.openFile(filePath);
   }
 
   /** Temporary image preview; it overrides but never discards a selected file preview. */
@@ -270,7 +257,7 @@ export class Sidebar implements Component {
       this.selectedFileKey = fileKey(file);
       this.setView(undefined);
       this.actions?.selectFile(file);
-      if (this.consumeDoubleClick(`file:${file.path}`)) this.openFile(file.path);
+      if (this.isDoubleClick(event, `file:${file.path}:${event.x}`)) this.actions?.openFile(file.path);
       return { handled: true };
     }
     if (event.type === "click" && event.button === "left" && this.lastPeekHits) {
@@ -284,7 +271,7 @@ export class Sidebar implements Component {
       }
       if (hit?.id === "copy") {
         const path = this.effectiveView()?.filePath;
-        if (path) this.copyPath(path);
+        if (path) this.actions?.copy(path);
         return { handled: true };
       }
     }
@@ -299,8 +286,8 @@ export class Sidebar implements Component {
     }
     if (event.type === "click" && event.button === "left" && event.y >= peekStart && event.y < peekStart + peekHeight) {
       const path = view?.filePath;
-      if (path && this.consumeDoubleClick(`preview:${path}`)) {
-        this.openFile(path);
+      if (path && this.isDoubleClick(event, `preview:${path}:${event.x}:${event.y}`)) {
+        this.actions?.openFile(path);
         return { handled: true };
       }
     }
@@ -310,7 +297,7 @@ export class Sidebar implements Component {
     const peekX = event.x - PEEK_PAD;
     const copied = view?.copyTextAt?.(peekX, y);
     if (copied !== undefined) {
-      this.copyText(copied);
+      this.actions?.copy(copied);
       return { handled: true };
     }
     if (!view?.handleClick?.(peekX, y)) return undefined;
@@ -469,7 +456,8 @@ export class Sidebar implements Component {
     });
   }
 
-  private consumeDoubleClick(target: string): boolean {
+  private isDoubleClick(event: TuiMouseEvent, target: string): boolean {
+    if (event.clickCount !== undefined) return event.clickCount === 2;
     const at = Date.now();
     const previous = this.lastClick;
     const doubled = Boolean(previous && previous.target === target && at - previous.at <= DOUBLE_CLICK_MS);

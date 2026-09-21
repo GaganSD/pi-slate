@@ -331,13 +331,7 @@ export default function piSlate(pi: ExtensionAPI): void {
           ctx.ui.notify(`Could not save sidebar width: ${message}`, "error");
         }
       },
-      copyPath: (filePath) => {
-        void copyToClipboard(filePath).then(
-          () => ctx.ui.notify("Copied file location", "info"),
-          () => ctx.ui.notify("Could not copy file location", "error"),
-        );
-      },
-      copyText: (text) => {
+      copy: (text) => {
         void copyToClipboard(text).then(
           () => ctx.ui.notify("Copied", "info"),
           () => ctx.ui.notify("Could not copy", "error"),

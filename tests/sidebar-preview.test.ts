@@ -99,7 +99,7 @@ test("clicking a changed file selects it instead of copying its path", () => {
   const selected: FileChange[] = [];
   const copied: string[] = [];
   sidebar.setActions({
-    copyPath: (filePath) => copied.push(filePath),
+    copy: (text) => copied.push(text),
     openFile() {},
     selectFile: (file) => {
       selected.push(file);
@@ -128,7 +128,7 @@ test("two rapid clicks on the same file row open that path once", () => {
   const selected: FileChange[] = [];
   const opened: string[] = [];
   sidebar.setActions({
-    copyPath() {},
+    copy() {},
     openFile: (filePath) => opened.push(filePath),
     selectFile: (file) => {
       selected.push(file);
@@ -154,7 +154,7 @@ test("a late second click on a file row selects it but does not open", (t) => {
   const selected: FileChange[] = [];
   const opened: string[] = [];
   sidebar.setActions({
-    copyPath() {},
+    copy() {},
     openFile: (filePath) => opened.push(filePath),
     selectFile: (file) => selected.push(file),
   });
@@ -175,7 +175,7 @@ test("double-clicking a preview with a real path opens that file", () => {
   const sidebar = attachSidebar();
   const opened: string[] = [];
   sidebar.setActions({
-    copyPath() {},
+    copy() {},
     openFile: (filePath) => opened.push(filePath),
     selectFile() {},
   });
@@ -188,6 +188,40 @@ test("double-clicking a preview with a real path opens that file", () => {
   assert.equal(sidebar.handleMouse(mouse({ type: "click", y: preview + 1 })), undefined);
   assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: preview + 1 })), { handled: true });
   assert.deepEqual(opened, ["src/a.ts"]);
+});
+
+test("TUI clickCount opens after the fallback timer would have expired", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000 });
+  const sidebar = attachSidebar();
+  const opened: string[] = [];
+  sidebar.setActions({
+    copy() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile() {},
+  });
+  sidebar.setFiles([{ index: " ", worktree: "M", path: "src/a.ts" }]);
+  sidebar.render(40);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3, clickCount: 1 })), { handled: true });
+  t.mock.timers.tick(DOUBLE_CLICK_MS + 50);
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3, clickCount: 2 })), { handled: true });
+  assert.deepEqual(opened, ["src/a.ts"]);
+});
+
+test("TUI clickCount 1 twice does not open", () => {
+  const sidebar = attachSidebar();
+  const opened: string[] = [];
+  sidebar.setActions({
+    copy() {},
+    openFile: (filePath) => opened.push(filePath),
+    selectFile() {},
+  });
+  sidebar.setFiles([{ index: " ", worktree: "M", path: "src/a.ts" }]);
+  sidebar.render(40);
+
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3, clickCount: 1 })), { handled: true });
+  assert.deepEqual(sidebar.handleMouse(mouse({ type: "click", y: 3, clickCount: 1 })), { handled: true });
+  assert.deepEqual(opened, []);
 });
 
 test("summary leaves blank lines between its sections and shows a disjoint activity breakdown", () => {
@@ -298,7 +332,7 @@ test("clicking preview [copy] copies the file path and leaves [clear] working", 
   const sidebar = attachSidebar();
   const copied: string[] = [];
   sidebar.setActions({
-    copyPath: (filePath) => copied.push(filePath),
+    copy: (text) => copied.push(text),
     openFile() {},
     selectFile() {},
   });
@@ -325,7 +359,7 @@ test("clicking image [copy path] copies the real filepath, not the placeholder",
   const sidebar = attachSidebar();
   const copied: string[] = [];
   sidebar.setActions({
-    copyPath: (filePath) => copied.push(filePath),
+    copy: (text) => copied.push(text),
     openFile() {},
     selectFile() {},
   });
@@ -355,8 +389,7 @@ test("clicking an activity item [copy] copies that item and does not expand it",
   const sidebar = attachSidebar();
   const copied: string[] = [];
   sidebar.setActions({
-    copyPath() {},
-    copyText: (text) => copied.push(text),
+    copy: (text) => copied.push(text),
     openFile() {},
     selectFile() {},
   });
