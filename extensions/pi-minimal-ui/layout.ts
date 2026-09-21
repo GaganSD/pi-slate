@@ -29,8 +29,8 @@ export function formatTokenCount(tokens: number | null | undefined): string {
 }
 
 export function formatTokenRate(rate: number | null | undefined): string {
-  if (rate === null || rate === undefined || !Number.isFinite(rate)) return "—/s";
-  return `${formatInteger(Math.max(0, rate))}/s`;
+  if (rate === null || rate === undefined || !Number.isFinite(rate)) return "— tokens/sec";
+  return `${formatInteger(Math.max(0, rate))} tokens/sec`;
 }
 
 export function formatPercent(percent: number | null | undefined): string {
@@ -43,32 +43,25 @@ export function formatSpend(cost: number | null | undefined): string {
   return `$${Math.max(0, cost).toFixed(2)}`;
 }
 
-export function formatContextUsage(
+export function formatContextTokens(
   tokens: number | null | undefined,
   percent: number | null | undefined,
   spend: number | null | undefined,
-): string {
-  return `${formatTokenCount(tokens)} (${formatPercent(percent)}) · ${formatSpend(spend)}`;
-}
-
-export function formatContextMeta(
   rate: number | null | undefined,
-  skills: number,
-  mcpCount: number | null,
 ): string {
-  return `${formatTokenRate(rate)} · ${formatContextResources(skills, mcpCount)}`;
+  return `${formatTokenCount(tokens)} (${formatPercent(percent)}) · ${formatSpend(spend)} · ${formatTokenRate(rate)}`;
 }
 
 export const MCP_STATUS_EVENT = "pi-mcp-adapter/status/v1";
 
 export function formatMcpConnected(count: number): string {
   const servers = Math.max(0, Math.round(count));
-  return `${servers} MCPs`;
+  return `${servers} MCPs connected`;
 }
 
 export function formatSkillsLoaded(count: number): string {
   const skills = Math.max(0, Math.round(count));
-  return `${skills} skills`;
+  return `${skills} skills loaded`;
 }
 
 export function formatContextResources(skills: number, mcpCount: number | null): string {

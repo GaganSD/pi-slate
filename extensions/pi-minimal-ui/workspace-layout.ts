@@ -1,5 +1,5 @@
 export const WORKSPACE_CAPTION_LINES = 1;
-export const SIDEBAR_DOCK_LINES = 2;
+export const SIDEBAR_DOCK_LINES = 4;
 export const FILES_WIDGET_MAX_LINES = 5;
 
 export function sidebarDockLines(): number {

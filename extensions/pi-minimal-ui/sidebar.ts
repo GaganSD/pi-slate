@@ -8,8 +8,8 @@ import {
   type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import {
-  formatContextMeta,
-  formatContextUsage,
+  formatContextResources,
+  formatContextTokens,
   SIDEBAR_EDITOR_RESERVE,
   SIDEBAR_MIN_TERMINAL_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -264,22 +264,21 @@ export class Sidebar implements Component {
 
   private dockLines(width: number, height: number, theme: Theme | undefined): string[] {
     if (height < 1) return [];
-    const usage = formatContextUsage(
+    const tokens = formatContextTokens(
       this.contextData.tokens,
       this.contextData.percent,
       this.contextData.spend,
-    );
-    const meta = formatContextMeta(
       this.contextData.tokensPerSec,
-      this.skillsLoaded,
-      this.mcpConnected,
     );
-    if (height === 1) return [theme ? this.body(usage, width, theme, "muted") : usage];
+    const resources = formatContextResources(this.skillsLoaded, this.mcpConnected);
+    if (height === 1) return [theme ? this.body(tokens, width, theme, "muted") : tokens];
 
-    const lines = [
-      theme ? this.body(usage, width, theme, "muted") : this.decorateLine(usage, width, theme),
-      theme ? this.body(meta, width, theme, "dim") : this.decorateLine(meta, width, theme),
-    ];
+    const lines: string[] = [];
+    if (height >= 4 && theme) lines.push(this.rule(width, theme));
+    else if (height >= 4) lines.push("─".repeat(Math.max(0, width)));
+    lines.push(this.heading("Context", width, theme));
+    if (lines.length < height) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
+    if (lines.length < height) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
     while (lines.length < height) lines.push(this.decorateLine("", width, theme));
     return lines.slice(0, height);
   }

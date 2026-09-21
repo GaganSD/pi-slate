@@ -7,9 +7,8 @@ import {
   compactPath,
   footerVisibility,
   countSkillCommands,
-  formatContextMeta,
   formatContextResources,
-  formatContextUsage,
+  formatContextTokens,
   formatInteger,
   formatMcpConnected,
   formatPercent,
@@ -64,15 +63,14 @@ test("sidebar context labels match the OpenCode-style facts", () => {
   assert.equal(formatInteger(18958), "18,958");
   assert.equal(formatTokenCount(18958), "18,958 tokens");
   assert.equal(formatTokenCount(null), "— tokens");
-  assert.equal(formatTokenRate(42.4), "42/s");
-  assert.equal(formatTokenRate(null), "—/s");
+  assert.equal(formatTokenRate(42.4), "42 tokens/sec");
+  assert.equal(formatTokenRate(null), "— tokens/sec");
   assert.equal(formatPercent(2.4), "2%");
   assert.equal(formatPercent(null), "—%");
   assert.equal(formatSpend(1.234), "$1.23");
   assert.equal(formatSpend(null), "$0.00");
-  assert.equal(formatContextUsage(3485, 2.4, 1.234), "3,485 tokens (2%) · $1.23");
-  assert.equal(formatContextUsage(null, null, null), "— tokens (—%) · $0.00");
-  assert.equal(formatContextMeta(42.4, 12, 0), "42/s · 12 skills · 0 MCPs");
+  assert.equal(formatContextTokens(3485, 2.4, 1.234, 42.4), "3,485 tokens (2%) · $1.23 · 42 tokens/sec");
+  assert.equal(formatContextTokens(null, null, null, null), "— tokens (—%) · $0.00 · — tokens/sec");
 });
 
 test("model label stays safe with missing data", () => {
@@ -89,21 +87,21 @@ test("workspace column is 20% once the terminal is wide enough", () => {
 
 test("sidebar rows pin the footer dock and give the rest to content", () => {
   assert.deepEqual(sidebarRowSlots(0), { contentHeight: 0, dockHeight: 0 });
-  assert.deepEqual(sidebarRowSlots(2), { contentHeight: 0, dockHeight: 2 });
-  assert.deepEqual(sidebarRowSlots(5), { contentHeight: 3, dockHeight: 2 });
-  assert.deepEqual(sidebarRowSlots(20), { contentHeight: 18, dockHeight: 2 });
-  assert.equal(sidebarDockLines(), 2);
-  assert.deepEqual(sidebarRowSlots(20, sidebarDockLines()), { contentHeight: 18, dockHeight: 2 });
+  assert.deepEqual(sidebarRowSlots(4), { contentHeight: 0, dockHeight: 4 });
+  assert.deepEqual(sidebarRowSlots(5), { contentHeight: 1, dockHeight: 4 });
+  assert.deepEqual(sidebarRowSlots(20), { contentHeight: 16, dockHeight: 4 });
+  assert.equal(sidebarDockLines(), 4);
+  assert.deepEqual(sidebarRowSlots(20, sidebarDockLines()), { contentHeight: 16, dockHeight: 4 });
 });
 
 test("MCP and skill counts share the Context resource line", () => {
-  assert.equal(formatMcpConnected(0), "0 MCPs");
-  assert.equal(formatMcpConnected(1), "1 MCPs");
-  assert.equal(formatMcpConnected(2), "2 MCPs");
-  assert.equal(formatSkillsLoaded(0), "0 skills");
-  assert.equal(formatSkillsLoaded(3), "3 skills");
-  assert.equal(formatContextResources(3, 2), "3 skills · 2 MCPs");
-  assert.equal(formatContextResources(0, null), "0 skills · 0 MCPs");
+  assert.equal(formatMcpConnected(0), "0 MCPs connected");
+  assert.equal(formatMcpConnected(1), "1 MCPs connected");
+  assert.equal(formatMcpConnected(2), "2 MCPs connected");
+  assert.equal(formatSkillsLoaded(0), "0 skills loaded");
+  assert.equal(formatSkillsLoaded(3), "3 skills loaded");
+  assert.equal(formatContextResources(3, 2), "3 skills loaded · 2 MCPs connected");
+  assert.equal(formatContextResources(0, null), "0 skills loaded · 0 MCPs connected");
   assert.equal(countSkillCommands([
     { source: "skill", sourceInfo: { path: "/skills/a/SKILL.md" }, name: "a" },
     { source: "skill", sourceInfo: { path: "/skills/a/SKILL.md" }, name: "a:1" },
