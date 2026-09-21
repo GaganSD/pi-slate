@@ -12,8 +12,8 @@ import {
   type MarkdownTheme,
   type Terminal,
 } from "@earendil-works/pi-tui";
-import { installSidebarSplit } from "../extensions/sidebar/sidebar-split.ts";
-import { mainColumnWidth, workspaceColumnWidth } from "../extensions/sidebar/layout.ts";
+import { installSidebarSplit } from "../extensions/pi-minimal-ui/sidebar-split.ts";
+import { mainColumnWidth, workspaceColumnWidth } from "../extensions/pi-minimal-ui/layout.ts";
 
 const identity = (text: string) => text;
 const theme: MarkdownTheme = {

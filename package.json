@@ -1,15 +1,18 @@
 {
   "name": "pi-extensions",
   "version": "0.1.0",
-  "description": "Four-section session sidebar for the Pi coding agent.",
+  "description": "Pi extensions: pi-minimal-ui (header, footer, sidebar, theme).",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "pi-package",
-    "pi-extension"
+    "pi-extension",
+    "pi-theme"
   ],
   "files": [
+    "assets",
     "extensions",
+    "themes",
     "README.md",
     "LICENSE"
   ],
@@ -32,7 +35,10 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/sidebar/index.ts"
+      "./extensions/pi-minimal-ui/index.ts"
+    ],
+    "themes": [
+      "./themes/pi-minimal.json"
     ]
   }
 }

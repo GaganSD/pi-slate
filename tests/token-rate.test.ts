@@ -4,7 +4,7 @@ import {
   estimateAssistantTokens,
   TOKEN_RATE_WINDOW_MS,
   TokenRateTracker,
-} from "../extensions/sidebar/token-rate.ts";
+} from "../extensions/pi-minimal-ui/token-rate.ts";
 
 test("estimates assistant tokens from streamed content", () => {
   assert.equal(estimateAssistantTokens({}), 0);

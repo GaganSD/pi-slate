@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
-import { type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import { type Theme } from "@earendil-works/pi-coding-agent";
 import {
-  isViewportTUI,
   truncateToWidth,
   type Component,
   type OverlayHandle,
@@ -13,7 +12,8 @@ import {
   formatContextResources,
   formatContextTokens,
   SIDEBAR_EDITOR_RESERVE,
-  type WidthLayout,
+  SIDEBAR_MIN_TERMINAL_WIDTH,
+  SIDEBAR_MIN_WIDTH,
 } from "./layout.ts";
 import {
   clampFilesOffset,
@@ -23,13 +23,10 @@ import {
   formatFileLabel,
   sameFiles,
   type FileChange,
-  type FileMarkStyle,
 } from "./files-modified.ts";
-import { planPanel, type PlanItem, type PlanStatus } from "./plan.ts";
+import { planPanel, type PlanItem } from "./plan.ts";
 import { installSidebarSplit } from "./sidebar-split.ts";
-import { hasForeignSplitOwner } from "./split-host.ts";
 import { displayedTokenRate } from "./token-rate.ts";
-import { paint, paintBold, resolveThemeColor, ruleChars } from "./tokens.ts";
 import type { WorkspaceView } from "./workspace.ts";
 import {
   filesWidgetDesiredHeight,
@@ -50,91 +47,13 @@ export type SidebarActions = {
   copyPath(filePath: string): void;
 };
 
-export type SidebarColors = {
-  heading: ThemeColor;
-  body: ThemeColor;
-  dim: ThemeColor;
-  rule: ThemeColor;
-  fileNew: ThemeColor;
-  fileModified: ThemeColor;
-  fileDeleted: ThemeColor;
-  fileRenamed: ThemeColor;
-  fileUnmerged: ThemeColor;
-  planPending: ThemeColor;
-  planActive: ThemeColor;
-  planDone: ThemeColor;
-};
-
-export type SidebarMarks = {
-  fileNew: string;
-  fileModified: string;
-  fileDeleted: string;
-  fileRenamed: string;
-  fileUnmerged: string;
-  planPending: string;
-  planActive: string;
-  planDone: string;
-};
-
-export type SidebarSettings = {
-  enabled: boolean;
-  ascii: boolean;
-  filesMaxLines: number;
-  widthPercent: number;
-  minWidth: number;
-  minTerminalWidth: number;
-  colors: SidebarColors;
-  marks: SidebarMarks;
-};
-
-export const DEFAULT_SIDEBAR_SETTINGS: SidebarSettings = {
-  enabled: true,
-  ascii: false,
-  filesMaxLines: 5,
-  widthPercent: 20,
-  minWidth: 28,
-  minTerminalWidth: 60,
-  colors: {
-    heading: "text",
-    body: "muted",
-    dim: "dim",
-    rule: "borderMuted",
-    fileNew: "success",
-    fileModified: "warning",
-    fileDeleted: "error",
-    fileRenamed: "accent",
-    fileUnmerged: "error",
-    planPending: "dim",
-    planActive: "accent",
-    planDone: "success",
-  },
-  marks: {
-    fileNew: "N",
-    fileModified: "M",
-    fileDeleted: "D",
-    fileRenamed: "R",
-    fileUnmerged: "U",
-    planPending: "○",
-    planActive: "◐",
-    planDone: "✓",
-  },
-};
-
-const ASCII_PLAN_MARKS = {
-  planPending: "o",
-  planActive: "*",
-  planDone: "x",
-} as const;
-
-export type SidebarAttachResult = "split" | "overlay" | "foreign" | "idle";
-
 export class Sidebar implements Component {
   private tui?: TUI;
   private theme?: Theme;
   private handle?: OverlayHandle;
   private splitDispose?: () => void;
-  private contextData: SidebarContextData = { tokens: null, percent: null, tokensPerSec: 0 };
   private view?: WorkspaceView;
+  private contextData: SidebarContextData = { tokens: null, percent: null, tokensPerSec: 0 };
   private lastSlots = { planHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
   private mcpConnected: number | null = null;
   private skillsLoaded = 0;
@@ -147,7 +66,6 @@ export class Sidebar implements Component {
   private contentCached?: { key: string; lines: string[] };
   private dockCached?: { key: string; lines: string[] };
   private actions?: SidebarActions;
-  private settings: SidebarSettings = { ...DEFAULT_SIDEBAR_SETTINGS, colors: { ...DEFAULT_SIDEBAR_SETTINGS.colors }, marks: { ...DEFAULT_SIDEBAR_SETTINGS.marks } };
   splitActive = false;
 
   requireTheme(): Theme {
@@ -155,78 +73,24 @@ export class Sidebar implements Component {
     return this.theme;
   }
 
-  widthLayout(): WidthLayout {
-    return {
-      widthPercent: this.settings.widthPercent,
-      minWidth: this.settings.minWidth,
-      minTerminalWidth: this.settings.minTerminalWidth,
-    };
-  }
-
-  attach(tui: TUI, theme: Theme): SidebarAttachResult {
+  attach(tui: TUI, theme: Theme): void {
     this.tui = tui;
     this.theme = theme;
-    if (!this.settings.enabled) {
-      this.unmount();
-      return "idle";
-    }
-    if (this.splitDispose || this.handle) this.unmount();
-    if (isViewportTUI(tui) && hasForeignSplitOwner(tui)) return "foreign";
-
-    this.splitDispose = installSidebarSplit(tui, this, () => this.widthLayout());
+    if (this.splitDispose || this.handle) return;
+    this.splitDispose = installSidebarSplit(tui, this);
     this.splitActive = Boolean(this.splitDispose);
     this.contentCached = undefined;
     this.dockCached = undefined;
-    if (this.splitActive) return "split";
-
+    if (this.splitActive) return;
     this.handle = tui.showOverlay(this, {
       nonCapturing: true,
       anchor: "top-right",
-      width: `${this.settings.widthPercent}%`,
-      minWidth: this.settings.minWidth,
+      width: "20%",
+      minWidth: SIDEBAR_MIN_WIDTH,
       maxHeight: "100%",
       margin: { top: 0, right: 0, bottom: SIDEBAR_EDITOR_RESERVE, left: 0 },
-      visible: (termWidth) => termWidth >= this.settings.minTerminalWidth,
+      visible: (termWidth) => termWidth >= SIDEBAR_MIN_TERMINAL_WIDTH,
     });
-    return "overlay";
-  }
-
-  unmount(): void {
-    this.splitDispose?.();
-    this.splitDispose = undefined;
-    this.splitActive = false;
-    this.handle?.hide();
-    this.handle = undefined;
-    this.view = undefined;
-    this.contentCached = undefined;
-    this.dockCached = undefined;
-    this.lastSlots = { planHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
-  }
-
-  setSettings(settings: SidebarSettings): void {
-    this.settings = {
-      ...settings,
-      colors: { ...settings.colors },
-      marks: { ...settings.marks },
-    };
-    this.contentCached = undefined;
-    this.dockCached = undefined;
-    if (!this.tui || !this.theme) {
-      this.tui?.requestRender();
-      return;
-    }
-    const shouldShow = this.settings.enabled;
-    const shown = Boolean(this.splitDispose || this.handle);
-    if (!shouldShow && shown) {
-      this.unmount();
-    } else if (shouldShow && !shown) {
-      this.attach(this.tui, this.theme);
-    } else if (shouldShow && this.handle && !this.splitActive) {
-      this.handle.hide();
-      this.handle = undefined;
-      this.attach(this.tui, this.theme);
-    }
-    this.tui.requestRender();
   }
 
   setActions(actions: SidebarActions): void {
@@ -242,10 +106,6 @@ export class Sidebar implements Component {
     this.view = view;
     this.contentCached = undefined;
     this.tui?.requestRender();
-  }
-
-  currentViewId(): string | undefined {
-    return this.view?.id;
   }
 
   setContext(data: SidebarContextData): void {
@@ -281,7 +141,7 @@ export class Sidebar implements Component {
     this.filesOffset = clampFilesOffset(
       this.filesOffset,
       files.length,
-      Math.max(0, filesWidgetDesiredHeight(files.length, this.settings.filesMaxLines) - 1),
+      Math.max(0, filesWidgetDesiredHeight(files.length) - 1),
     );
     this.contentCached = undefined;
     this.tui?.requestRender();
@@ -300,6 +160,10 @@ export class Sidebar implements Component {
     this.skillsLoaded = next;
     this.dockCached = undefined;
     this.tui?.requestRender();
+  }
+
+  currentViewId(): string | undefined {
+    return this.view?.id;
   }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
@@ -337,8 +201,8 @@ export class Sidebar implements Component {
       height,
       sidebarDockLines(),
     );
-    const contentKey = `${width}x${contentHeight}:${this.todoRev}:${this.filesRev}:${this.filesOffset}:${this.view?.id ?? ""}:${this.settings.ascii}:${this.settings.filesMaxLines}`;
-    const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${displayedTokenRate(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}:${this.settings.ascii}`;
+    const contentKey = `${width}x${contentHeight}:${this.todoRev}:${this.filesRev}:${this.filesOffset}:${this.view?.id ?? ""}`;
+    const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${displayedTokenRate(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
       ? this.contentCached.lines
       : this.contentLines(width, contentHeight, theme);
@@ -351,46 +215,21 @@ export class Sidebar implements Component {
   }
 
   dispose(): void {
-    this.unmount();
+    this.splitDispose?.();
+    this.splitDispose = undefined;
+    this.splitActive = false;
+    this.handle?.hide();
+    this.handle = undefined;
+    this.view = undefined;
     this.files = [];
     this.filesRev = 0;
     this.filesOffset = 0;
     this.cwd = "";
+    this.contentCached = undefined;
+    this.dockCached = undefined;
+    this.lastSlots = { planHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
     this.tui = undefined;
     this.theme = undefined;
-  }
-
-  private fileStyle(): FileMarkStyle {
-    const { marks, colors } = this.settings;
-    return {
-      marks: {
-        fileNew: marks.fileNew,
-        fileModified: marks.fileModified,
-        fileDeleted: marks.fileDeleted,
-        fileRenamed: marks.fileRenamed,
-        fileUnmerged: marks.fileUnmerged,
-      },
-      tones: {
-        fileNew: colorTone(colors.fileNew, "success"),
-        fileModified: colorTone(colors.fileModified, "warning"),
-        fileDeleted: colorTone(colors.fileDeleted, "error"),
-        fileRenamed: colorTone(colors.fileRenamed, "accent"),
-        fileUnmerged: colorTone(colors.fileUnmerged, "error"),
-      },
-    };
-  }
-
-  private planMark(status: PlanStatus): { mark: string; color: ThemeColor } {
-    const ascii = this.settings.ascii;
-    const marks = this.settings.marks;
-    const colors = this.settings.colors;
-    if (status === "done") {
-      return { mark: ascii ? ASCII_PLAN_MARKS.planDone : marks.planDone, color: colors.planDone };
-    }
-    if (status === "in_progress") {
-      return { mark: ascii ? ASCII_PLAN_MARKS.planActive : marks.planActive, color: colors.planActive };
-    }
-    return { mark: ascii ? ASCII_PLAN_MARKS.planPending : marks.planPending, color: colors.planPending };
   }
 
   private dockLines(width: number, height: number, theme: Theme | undefined): string[] {
@@ -401,12 +240,13 @@ export class Sidebar implements Component {
       this.contextData.tokensPerSec,
     );
     const resources = formatContextResources(this.skillsLoaded, this.mcpConnected);
-    if (height === 1) return [theme ? this.body(tokens, width, theme, "body") : tokens];
+    if (height === 1) return [theme ? this.body(tokens, width, theme, "muted") : tokens];
 
     const lines: string[] = [];
-    if (height >= 4) lines.push(this.rule(width, theme));
+    if (height >= 4 && theme) lines.push(this.rule(width, theme));
+    else if (height >= 4) lines.push("─".repeat(Math.max(0, width)));
     lines.push(this.heading("Context", width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(tokens, width, theme, "body") : this.decorateLine(tokens, width, theme));
+    if (lines.length < height) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
     if (lines.length < height) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
     while (lines.length < height) lines.push(this.decorateLine("", width, theme));
     return lines.slice(0, height);
@@ -419,8 +259,7 @@ export class Sidebar implements Component {
     }
     const { filesHeight, filesDivider, planHeight, dividerHeight, peekHeight } = this.lastSlots = splitSidebarContent(
       height,
-      filesWidgetDesiredHeight(this.files.length, this.settings.filesMaxLines),
-      this.settings.filesMaxLines,
+      filesWidgetDesiredHeight(this.files.length),
     );
     const lines: string[] = [...this.filesLines(width, filesHeight, theme)];
     this.pushRule(lines, filesDivider, width, theme);
@@ -441,11 +280,13 @@ export class Sidebar implements Component {
     return planPanel(this.todos, maxHeight).map((line) => {
       if (line.type === "heading") return this.heading(`Plan ${line.done}/${line.total}`, width, theme);
       if (line.type === "overflow") return this.body(`+${line.count} more`, width, theme, "dim");
-      const mark = this.planMark(line.item.status);
-      const text = line.item.status === "done"
-        ? paint(theme, this.settings.colors.dim, line.item.text)
-        : paint(theme, this.settings.colors.body, line.item.text);
-      return this.decorateLine(`${" ".repeat(line.depth)}${paint(theme, mark.color, mark.mark)} ${text}`, width, theme);
+      const mark = line.item.status === "done"
+        ? theme.fg("success", "✓")
+        : line.item.status === "in_progress"
+          ? theme.fg("accent", "◐")
+          : theme.fg("dim", "○");
+      const text = line.item.status === "done" ? theme.fg("dim", line.item.text) : theme.fg("muted", line.item.text);
+      return this.decorateLine(`${" ".repeat(line.depth)}${mark} ${text}`, width, theme);
     });
   }
 
@@ -469,17 +310,16 @@ export class Sidebar implements Component {
     if (maxHeight < 1) return [];
     const panel = filesPanel(this.files, maxHeight, this.filesOffset);
     this.filesOffset = panel.offset;
-    const style = this.fileStyle();
     return panel.lines.map((line) => {
       if (line.type === "heading") {
         const label = line.count > 0 ? `Files Changed · ${line.count}` : "Files Changed";
         return this.heading(label, width, theme);
       }
       if (line.type === "empty") return this.body("none", width, theme, "dim");
-      const mark = fileMark(line.item, style);
+      const mark = fileMark(line.item);
       const label = formatFileLabel(line.item);
       if (!theme) return this.decorateLine(`${mark.mark} ${label}`, width, theme);
-      return this.decorateLine(`${paint(theme, mark.tone, mark.mark)} ${paint(theme, this.settings.colors.body, label)}`, width, theme);
+      return this.decorateLine(`${theme.fg(mark.tone, mark.mark)} ${theme.fg("muted", label)}`, width, theme);
     });
   }
 
@@ -496,7 +336,7 @@ export class Sidebar implements Component {
 
   private pushRule(lines: string[], height: number, width: number, theme: Theme | undefined): void {
     if (height < 1) return;
-    lines.push(this.rule(width, theme));
+    lines.push(theme ? this.rule(width, theme) : "─".repeat(Math.max(0, width)));
   }
 
   private padBlock(block: string[], height: number, width: number, theme: Theme | undefined): string[] {
@@ -507,32 +347,25 @@ export class Sidebar implements Component {
 
   private heading(label: string, width: number, theme: Theme | undefined): string {
     if (!theme) return this.decorateLine(label, width, theme);
-    return this.decorateLine(paintBold(theme, this.settings.colors.heading, label), width, theme);
+    return this.decorateLine(theme.bold(theme.fg("text", label)), width, theme);
   }
 
-  private body(text: string, width: number, theme: Theme | undefined, tone: "body" | "dim"): string {
+  private body(text: string, width: number, theme: Theme | undefined, color: "muted" | "dim"): string {
     if (!theme) return this.decorateLine(text, width, theme);
-    const color = tone === "dim" ? this.settings.colors.dim : this.settings.colors.body;
-    return this.decorateLine(paint(theme, color, text), width, theme);
+    return this.decorateLine(theme.fg(color, text), width, theme);
   }
 
-  private rule(width: number, theme: Theme | undefined): string {
-    const chars = ruleChars(this.settings.ascii);
-    const bar = chars.horizontal.repeat(Math.max(0, width - 1));
-    if (!theme) return `${chars.vertical}${bar}`;
-    return `${paint(theme, this.settings.colors.rule, chars.vertical)}${paint(theme, this.settings.colors.rule, bar)}`;
+  private rule(width: number, theme: Theme): string {
+    return `${theme.fg("borderMuted", "│")}${theme.fg("borderMuted", "─".repeat(Math.max(0, width - 1)))}`;
   }
 
   private decorateLine(line: string, width: number, theme: Theme | undefined): string {
-    const chars = ruleChars(this.settings.ascii);
     if (line.includes(KITTY_PREFIX) || line.includes("\x1b]1337;File=")) {
-      return theme
-        ? `${paint(theme, this.settings.colors.rule, chars.vertical)} ${line}`
-        : `${chars.vertical} ${line}`;
+      return theme ? `${theme.fg("borderMuted", "│")} ${line}` : `│ ${line}`;
     }
     if (!theme) return truncateToWidth(line, width);
-    if (line.length === 0) return paint(theme, this.settings.colors.rule, chars.vertical);
-    return `${paint(theme, this.settings.colors.rule, chars.vertical)}${truncateToWidth(` ${line}`, Math.max(0, width - 1))}`;
+    if (line.length === 0) return theme.fg("borderMuted", "│");
+    return `${theme.fg("borderMuted", "│")}${truncateToWidth(` ${line}`, Math.max(0, width - 1))}`;
   }
 }
 
@@ -547,15 +380,4 @@ function sameTodos(left: PlanItem[], right: PlanItem[]): boolean {
       && item.parentId === other.parentId
       && item.text === other.text;
   });
-}
-
-function colorTone(
-  color: ThemeColor,
-  fallback: FileMarkStyle["tones"]["fileNew"],
-): FileMarkStyle["tones"]["fileNew"] {
-  const resolved = resolveThemeColor(color, fallback);
-  if (resolved === "success" || resolved === "warning" || resolved === "error" || resolved === "accent" || resolved === "muted") {
-    return resolved;
-  }
-  return fallback;
 }

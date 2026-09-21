@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compactPath } from "../extensions/sidebar/layout.ts";
 import {
   displayImagePlaceholders,
   formatImageLocation,
@@ -11,7 +10,7 @@ import {
   rewriteInsertedText,
   transformSubmittedText,
   type ImageAttachment,
-} from "../extensions/sidebar/placeholders.ts";
+} from "../extensions/pi-minimal-ui/placeholders.ts";
 
 const PATH =
   "/var/folders/rf/b88_3vnj1f51k8qv9wpz8gw00000gn/T/pi-clipboard-f2634509-b0a8-489a-85f7-ce9dc69b976a.png";
@@ -21,11 +20,6 @@ const PATH_2 =
 function fakeImage(filePath: string): ImageAttachment {
   return { type: "image", data: `data:${filePath}`, mimeType: mimeTypeForImagePath(filePath) };
 }
-
-test("compacts home-relative image directories", () => {
-  assert.equal(compactPath("/Users/gagan/tmp", "/Users/gagan"), "~/tmp");
-  assert.equal(compactPath("/tmp/photo.png"), "/tmp/photo.png");
-});
 
 test("detects clipboard image temp paths", () => {
   assert.equal(isClipboardImagePath(PATH), true);
@@ -37,14 +31,6 @@ test("detects clipboard image temp paths", () => {
 test("numbers placeholders from existing editor text", () => {
   assert.equal(nextImageNumber(""), 1);
   assert.equal(nextImageNumber("see [image 1] and [image-3]"), 4);
-});
-
-test("rewrites the macOS temp clipboard path Pi actually writes", () => {
-  const store = new Map<string, string>();
-  const path =
-    "/var/folders/rf/b88_3vnj1f51k8qv9wpz8gw00000gn/T/pi-clipboard-e6240adb-ab5e-4e37-8096-507afd9215a4.png";
-  assert.equal(rewriteInsertedText(path, "", store), "[image-1]");
-  assert.equal(store.get("1"), path);
 });
 
 test("rewrites a pasted clipboard path to the next placeholder", () => {

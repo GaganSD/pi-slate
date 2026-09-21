@@ -24,23 +24,15 @@ export class ImageWorkspaceView implements WorkspaceView {
   private cached?: { key: string; lines: string[] };
   private filenameRow?: number;
   private readonly location: ReturnType<typeof formatImageLocation>;
-  private readonly filePath: string;
-  private readonly attachment: ImageAttachment;
-  private readonly theme: Theme;
-  private readonly onCopyPath?: (filePath: string) => void;
 
   constructor(
     number: string,
-    filePath: string,
-    attachment: ImageAttachment,
-    theme: Theme,
+    private readonly filePath: string,
+    private readonly attachment: ImageAttachment,
+    private readonly theme: Theme,
     home?: string,
-    onCopyPath?: (filePath: string) => void,
+    private readonly onCopyPath?: (filePath: string) => void,
   ) {
-    this.filePath = filePath;
-    this.attachment = attachment;
-    this.theme = theme;
-    this.onCopyPath = onCopyPath;
     this.id = `image:${number}:${filePath}`;
     this.location = formatImageLocation(filePath, home, number);
   }

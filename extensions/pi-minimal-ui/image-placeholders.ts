@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { CustomEditor, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Editor } from "@earendil-works/pi-tui";
 import { ImagePeek } from "./image-peek.ts";
 import {
@@ -12,22 +12,17 @@ import {
 } from "./placeholders.ts";
 import type { Sidebar } from "./sidebar.ts";
 
-const ORIGINAL_INSERT = Symbol.for("pi-extensions.sidebar.insertTextAtCursor");
-const ORIGINAL_PASTE = Symbol.for("pi-extensions.sidebar.handlePaste");
-const ORIGINAL_INPUT = Symbol.for("pi-extensions.sidebar.handleInput");
-const ORIGINAL_MOUSE = Symbol.for("pi-extensions.sidebar.handleMouse");
-
-type EditorPaste = (text: string) => void;
+const ORIGINAL_INSERT = Symbol.for("pi-minimal-ui.image-placeholders.insertTextAtCursor");
+const ORIGINAL_PASTE = Symbol.for("pi-minimal-ui.image-placeholders.handlePaste");
 
 type PatchableEditor = Editor & {
   handlePaste(text: string): void;
   [ORIGINAL_INSERT]?: Editor["insertTextAtCursor"];
-  [ORIGINAL_PASTE]?: EditorPaste;
-  [ORIGINAL_INPUT]?: Editor["handleInput"];
-  [ORIGINAL_MOUSE]?: Editor["handleMouse"];
+  [ORIGINAL_PASTE]?: (text: string) => void;
 };
 
 export type ImagePlaceholders = {
+  attachEditor(editor: CustomEditor): void;
   hidePeek(): void;
   dispose(): void;
 };
@@ -41,51 +36,23 @@ function loadImage(filePath: string): ImageAttachment | undefined {
   };
 }
 
-function peekSafe(peek: ImagePeek, editor: Peekable): void {
-  try {
-    peek.update(editor);
-  } catch {
-    // Peek must not break typing or paste.
-  }
-}
-
-type Peekable = { getText(): string; getCursor(): { line: number; col: number } };
-
-function installEditorPatches(store: ImagePathStore, peek: ImagePeek): () => void {
+function installEditorPatch(store: ImagePathStore, onInserted: () => void): () => void {
   const proto = Editor.prototype as PatchableEditor;
   proto[ORIGINAL_INSERT] ??= proto.insertTextAtCursor;
   proto[ORIGINAL_PASTE] ??= proto.handlePaste;
-  proto[ORIGINAL_INPUT] ??= proto.handleInput;
-  proto[ORIGINAL_MOUSE] ??= proto.handleMouse;
   const originalInsert = proto[ORIGINAL_INSERT];
   const originalPaste = proto[ORIGINAL_PASTE];
-  const originalInput = proto[ORIGINAL_INPUT];
-  const originalMouse = proto[ORIGINAL_MOUSE];
-
   function insertPatch(this: Editor, text: string) {
     const result = originalInsert.call(this, rewriteInsertedText(text, this.getText(), store));
-    peekSafe(peek, this);
+    onInserted();
     return result;
   }
   function pastePatch(this: Editor, text: string) {
     originalPaste.call(this, rewriteInsertedText(text, this.getText(), store));
-    peekSafe(peek, this);
+    onInserted();
   }
-  function inputPatch(this: Editor, data: string) {
-    originalInput.call(this, data);
-    peekSafe(peek, this);
-  }
-  function mousePatch(this: Editor, event: Parameters<Editor["handleMouse"]>[0]) {
-    const result = originalMouse.call(this, event);
-    peekSafe(peek, this);
-    return result;
-  }
-
   proto.insertTextAtCursor = insertPatch;
   proto.handlePaste = pastePatch;
-  proto.handleInput = inputPatch;
-  proto.handleMouse = mousePatch;
-
   return () => {
     if (proto.insertTextAtCursor === insertPatch) {
       proto.insertTextAtCursor = originalInsert;
@@ -95,21 +62,13 @@ function installEditorPatches(store: ImagePathStore, peek: ImagePeek): () => voi
       proto.handlePaste = originalPaste;
       if (proto[ORIGINAL_PASTE] === originalPaste) delete proto[ORIGINAL_PASTE];
     }
-    if (proto.handleInput === inputPatch) {
-      proto.handleInput = originalInput;
-      if (proto[ORIGINAL_INPUT] === originalInput) delete proto[ORIGINAL_INPUT];
-    }
-    if (proto.handleMouse === mousePatch) {
-      proto.handleMouse = originalMouse;
-      if (proto[ORIGINAL_MOUSE] === originalMouse) delete proto[ORIGINAL_MOUSE];
-    }
   };
 }
 
 export function installImagePlaceholders(pi: ExtensionAPI, workspace: Sidebar): ImagePlaceholders {
   const store: ImagePathStore = new Map();
-  const peek = new ImagePeek(store, workspace, loadImage);
-  const uninstallEditorPatches = installEditorPatches(store, peek);
+  let peek: ImagePeek | undefined;
+  const uninstallEditorPatch = installEditorPatch(store, () => peek?.update());
 
   pi.registerMarkdownTransformer((markdown, { messageType }) => {
     if (messageType !== "user") return markdown;
@@ -117,7 +76,7 @@ export function installImagePlaceholders(pi: ExtensionAPI, workspace: Sidebar): 
   });
 
   pi.on("input", async (event) => {
-    peek.hide();
+    peek?.hide();
     const result = transformSubmittedText(event.text, store, loadImage, event.images ?? []);
     if (result.text === event.text && result.images.length === (event.images?.length ?? 0)) {
       return { action: "continue" as const };
@@ -130,12 +89,17 @@ export function installImagePlaceholders(pi: ExtensionAPI, workspace: Sidebar): 
   });
 
   return {
+    attachEditor(editor) {
+      peek?.dispose();
+      peek = new ImagePeek(store, editor, workspace, loadImage);
+    },
     hidePeek() {
-      peek.hide();
+      peek?.hide();
     },
     dispose() {
-      peek.hide();
-      uninstallEditorPatches();
+      peek?.dispose();
+      peek = undefined;
+      uninstallEditorPatch();
     },
   };
 }

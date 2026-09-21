@@ -42,19 +42,14 @@ export function splitContentSlot(
   };
 }
 
-export function filesWidgetDesiredHeight(
-  fileCount: number,
-  maxLines = FILES_WIDGET_MAX_LINES,
-): number {
-  const cap = Math.max(2, Math.floor(maxLines));
+export function filesWidgetDesiredHeight(fileCount: number): number {
   if (fileCount <= 0) return 2;
-  return Math.min(cap, 1 + fileCount);
+  return Math.min(FILES_WIDGET_MAX_LINES, 1 + fileCount);
 }
 
 export function splitSidebarContent(
   height: number,
   filesDesired: number,
-  filesMaxLines = FILES_WIDGET_MAX_LINES,
 ): {
   filesHeight: number;
   filesDivider: number;
@@ -63,8 +58,7 @@ export function splitSidebarContent(
   peekHeight: number;
 } {
   const slotHeight = Math.max(0, Math.floor(height));
-  const cap = Math.max(2, Math.floor(filesMaxLines));
-  const filesWant = Math.max(0, Math.min(cap, Math.floor(filesDesired)));
+  const filesWant = Math.max(0, Math.min(FILES_WIDGET_MAX_LINES, Math.floor(filesDesired)));
   if (slotHeight === 0) {
     return { filesHeight: 0, filesDivider: 0, planHeight: 0, dividerHeight: 0, peekHeight: 0 };
   }

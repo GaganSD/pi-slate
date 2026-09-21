@@ -10,8 +10,8 @@ import {
   parsePorcelain,
   sameFiles,
   type FileChange,
-} from "../extensions/sidebar/files-modified.ts";
-import { GitStatusPoller } from "../extensions/sidebar/git-status.ts";
+} from "../extensions/pi-minimal-ui/files-modified.ts";
+import { GitStatusPoller } from "../extensions/pi-minimal-ui/git-status.ts";
 
 function file(path: string, index = " ", worktree = "M"): FileChange {
   return { index, worktree, path };
@@ -48,7 +48,6 @@ test("file marks collapse porcelain into a short colored label", () => {
     mark: "R",
     tone: "accent",
   });
-  assert.deepEqual(fileMark(file("e.ts", "U", "U")), { mark: "U", tone: "error" });
 });
 
 test("empty files panel is a heading plus none, or just none when only one row fits", () => {

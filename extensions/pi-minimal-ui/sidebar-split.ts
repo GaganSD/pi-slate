@@ -6,13 +6,13 @@ import {
   type TuiMouseEvent,
 } from "@earendil-works/pi-tui";
 import {
-  DEFAULT_WIDTH_LAYOUT,
+  SIDEBAR_MIN_TERMINAL_WIDTH,
+  SIDEBAR_MIN_WIDTH,
   workspaceColumnWidth,
-  type WidthLayout,
 } from "./layout.ts";
-import { bindSplitHost, hasForeignSplitOwner } from "./split-host.ts";
+import { bindSplitHost } from "./split-host.ts";
 
-const SIDEBAR_SPLIT = Symbol("sidebar-split");
+const SIDEBAR_SPLIT = Symbol.for("pi-minimal-ui.sidebar-split");
 
 class SidebarGutter implements Component {
   private readonly pane: Component;
@@ -39,9 +39,8 @@ class SidebarGutter implements Component {
 }
 
 class SidebarSplit extends HStack {
-  constructor(chat: Component, pane: Component, getWidth: () => WidthLayout) {
+  constructor(chat: Component, pane: Component) {
     const gutter = new SidebarGutter(pane);
-    const initial = getWidth();
     super([
       // Skip full-width intrinsic measurement: switching widths thrashes leaf render caches.
       { component: chat, basis: 0, grow: 1, shrink: 1, minSize: 1 },
@@ -49,14 +48,12 @@ class SidebarSplit extends HStack {
         component: gutter,
         grow: 0,
         shrink: 0,
-        minSize: initial.minWidth,
-        basis: initial.minWidth,
+        minSize: SIDEBAR_MIN_WIDTH,
+        basis: SIDEBAR_MIN_WIDTH,
         visible: (viewport) => {
-          const layout = getWidth();
-          const width = workspaceColumnWidth(viewport.width, layout);
+          const width = workspaceColumnWidth(viewport.width);
           const entry = this.entries[1];
-          if (entry && entry.basis !== width) entry.basis = Math.max(layout.minWidth, width);
-          if (entry) entry.minSize = layout.minWidth;
+          if (entry && entry.basis !== width) entry.basis = Math.max(SIDEBAR_MIN_WIDTH, width);
           return width > 0;
         },
       },
@@ -75,23 +72,19 @@ export function splitChat(component: Component | undefined): Component | undefin
   return component.entries[0]?.component ?? component.children[0];
 }
 
-export function installSidebarSplit(
-  tui: TUI,
-  pane: Component,
-  getWidth: () => WidthLayout = () => DEFAULT_WIDTH_LAYOUT,
-): (() => void) | undefined {
-  if (!isViewportTUI(tui) || hasForeignSplitOwner(tui)) return undefined;
+export function installSidebarSplit(tui: TUI, pane: Component): (() => void) | undefined {
+  if (!isViewportTUI(tui)) return undefined;
 
   return bindSplitHost(
     tui,
     (component) => {
       const chat = splitChat(component);
-      return chat ? new SidebarSplit(chat, pane, getWidth) : component;
+      return chat ? new SidebarSplit(chat, pane) : component;
     },
     splitChat,
   );
 }
 
-export function sidebarVisible(totalWidth: number, layout: WidthLayout = DEFAULT_WIDTH_LAYOUT): boolean {
-  return totalWidth >= layout.minTerminalWidth;
+export function sidebarVisible(totalWidth: number): boolean {
+  return totalWidth >= SIDEBAR_MIN_TERMINAL_WIDTH;
 }

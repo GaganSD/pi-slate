@@ -10,47 +10,6 @@ export type FilesPanelLine =
   | { type: "empty" }
   | { type: "file"; item: FileChange };
 
-export type FileTone = "success" | "warning" | "error" | "accent" | "muted";
-
-export type FileMark = {
-  mark: string;
-  tone: FileTone;
-};
-
-export type FileMarkStyle = {
-  marks: {
-    fileNew: string;
-    fileModified: string;
-    fileDeleted: string;
-    fileRenamed: string;
-    fileUnmerged: string;
-  };
-  tones: {
-    fileNew: FileTone;
-    fileModified: FileTone;
-    fileDeleted: FileTone;
-    fileRenamed: FileTone;
-    fileUnmerged: FileTone;
-  };
-};
-
-export const DEFAULT_FILE_MARK_STYLE: FileMarkStyle = {
-  marks: {
-    fileNew: "N",
-    fileModified: "M",
-    fileDeleted: "D",
-    fileRenamed: "R",
-    fileUnmerged: "U",
-  },
-  tones: {
-    fileNew: "success",
-    fileModified: "warning",
-    fileDeleted: "error",
-    fileRenamed: "accent",
-    fileUnmerged: "error",
-  },
-};
-
 export function parsePorcelain(output: string): FileChange[] {
   if (!output) return [];
   const parts = output.split("\0");
@@ -76,23 +35,29 @@ export function parsePorcelain(output: string): FileChange[] {
   return files;
 }
 
+export type FileTone = "success" | "warning" | "error" | "accent" | "muted";
+
+export type FileMark = {
+  mark: string;
+  tone: FileTone;
+};
+
 export function formatFileCode(change: FileChange): string {
   return `${change.index}${change.worktree}`;
 }
 
-export function fileMark(change: FileChange, style: FileMarkStyle = DEFAULT_FILE_MARK_STYLE): FileMark {
+export function fileMark(change: FileChange): FileMark {
   const index = change.index;
   const worktree = change.worktree;
-  if (index === "?" || worktree === "?") return { mark: style.marks.fileNew, tone: style.tones.fileNew };
+  if (index === "?" || worktree === "?") return { mark: "N", tone: "success" };
   if (index === "U" || worktree === "U" || index === "A" && worktree === "A") {
-    return { mark: style.marks.fileUnmerged, tone: style.tones.fileUnmerged };
+    return { mark: "U", tone: "error" };
   }
-  if (index === "R" || worktree === "R" || index === "C" || worktree === "C") {
-    return { mark: style.marks.fileRenamed, tone: style.tones.fileRenamed };
-  }
-  if (index === "D" || worktree === "D") return { mark: style.marks.fileDeleted, tone: style.tones.fileDeleted };
-  if (index === "A" || worktree === "A") return { mark: style.marks.fileNew, tone: style.tones.fileNew };
-  return { mark: style.marks.fileModified, tone: style.tones.fileModified };
+  if (index === "R" || worktree === "R") return { mark: "R", tone: "accent" };
+  if (index === "C" || worktree === "C") return { mark: "C", tone: "accent" };
+  if (index === "D" || worktree === "D") return { mark: "D", tone: "error" };
+  if (index === "A" || worktree === "A") return { mark: "N", tone: "success" };
+  return { mark: "M", tone: "warning" };
 }
 
 export function formatFileLabel(change: FileChange): string {

@@ -1,4 +1,4 @@
-import { execFile, type ExecFileException } from "node:child_process";
+import { execFile } from "node:child_process";
 import { parsePorcelain, sameFiles, type FileChange } from "./files-modified.ts";
 
 export const GIT_STATUS_POLL_MS = 2000;
@@ -6,34 +6,24 @@ export const GIT_STATUS_TIMEOUT_MS = 2000;
 
 export type GitPorcelainRunner = (cwd: string) => Promise<string>;
 
-type PorcelainExecFile = (
-  file: string,
-  args: readonly string[],
-  options: {
-    cwd: string;
-    encoding: "utf8";
-    timeout: number;
-    windowsHide: boolean;
-    maxBuffer: number;
-  },
-  callback: (error: ExecFileException | null, stdout: string) => void,
-) => unknown;
-
 export function createGitPorcelainRunner(
   timeoutMs = GIT_STATUS_TIMEOUT_MS,
-  runExecFile: PorcelainExecFile = execFile as PorcelainExecFile,
 ): GitPorcelainRunner {
   return (cwd) => new Promise((resolve, reject) => {
-    runExecFile(
+    execFile(
       "git",
       ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
       { cwd, encoding: "utf8", timeout: timeoutMs, windowsHide: true, maxBuffer: 1024 * 1024 },
       (error, stdout) => {
-        if (error) {
+        if (!error) {
+          resolve(typeof stdout === "string" ? stdout : "");
+          return;
+        }
+        if (error.killed) {
           reject(error);
           return;
         }
-        resolve(typeof stdout === "string" ? stdout : "");
+        resolve("");
       },
     );
   });
@@ -42,8 +32,7 @@ export function createGitPorcelainRunner(
 export class GitStatusPoller {
   private cwd = "";
   private timer?: ReturnType<typeof setInterval>;
-  private inflight?: Promise<void>;
-  private trailing = false;
+  private queue: Promise<void> = Promise.resolve();
   private last: FileChange[] = [];
   private started = false;
   private readonly onChange: (files: FileChange[]) => void;
@@ -80,31 +69,17 @@ export class GitStatusPoller {
   }
 
   refresh(): Promise<void> {
-    if (!this.started || !this.cwd) return this.inflight ?? Promise.resolve();
-    if (this.inflight) {
-      this.trailing = true;
-      return this.inflight;
-    }
-    this.inflight = this.runCycle().finally(() => {
-      this.inflight = undefined;
-    });
-    return this.inflight;
+    if (!this.started || !this.cwd) return Promise.resolve();
+    this.queue = this.queue.then(() => this.pull());
+    return this.queue;
   }
 
   dispose(): void {
     this.started = false;
-    this.trailing = false;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
     }
-  }
-
-  private async runCycle(): Promise<void> {
-    do {
-      this.trailing = false;
-      await this.pull();
-    } while (this.trailing && this.started && this.cwd);
   }
 
   private async pull(): Promise<void> {
@@ -117,7 +92,7 @@ export class GitStatusPoller {
       this.last = next;
       this.onChange(next);
     } catch {
-      // Timeouts, kills, nonzero exits, and maxBuffer keep the last successful snapshot.
+      // Timeouts keep the last successful snapshot.
     }
   }
 }

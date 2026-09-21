@@ -1,8 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  PI_LOGO,
+  PI_LOGO_ASCII,
+  centerOffset,
+  compactPath,
+  contextLabel,
+  footerVisibility,
   countSkillCommands,
+  formatCompactContext,
   formatContextResources,
+  formatContextSummary,
   formatContextTokens,
   formatContextUsed,
   formatCount,
@@ -10,24 +18,53 @@ import {
   formatMcpConnected,
   formatPercent,
   formatSkillsLoaded,
+  formatSpend,
   formatTokenCount,
   formatTokenCountWithRate,
   formatTokenRate,
   parseMcpConnectedCount,
   mainColumnWidth,
+  modelLabel,
   workspaceColumnWidth,
-} from "../extensions/sidebar/layout.ts";
+} from "../extensions/pi-minimal-ui/layout.ts";
 import {
   FILES_WIDGET_MAX_LINES,
   filesWidgetDesiredHeight,
   fitImageCells,
   placeWorkspaceImage,
   sidebarDockLines,
-  workspacePaneSlots,
   sidebarRowSlots,
   splitContentSlot,
   splitSidebarContent,
-} from "../extensions/sidebar/workspace-layout.ts";
+  workspacePaneSlots,
+} from "../extensions/pi-minimal-ui/workspace-layout.ts";
+
+test("logo preserves the official four-row geometry and terminal aspect ratio", () => {
+  assert.deepEqual(PI_LOGO, ["██████  ", "██  ██  ", "████  ██", "██    ██"]);
+  assert.deepEqual(PI_LOGO_ASCII, ["######  ", "##  ##  ", "####  ##", "##    ##"]);
+  assert.ok(PI_LOGO.every((line) => line.length === 8));
+  assert.ok(PI_LOGO_ASCII.every((line) => line.length === 8));
+  assert.ok(PI_LOGO_ASCII.every((line) => /^[ #]+$/.test(line)));
+});
+
+test("header content is centered without negative padding", () => {
+  assert.equal(centerOffset(190, 78), 56);
+  assert.equal(centerOffset(79, 78), 0);
+  assert.equal(centerOffset(40, 78), 0);
+});
+
+test("footer progressively reveals optional metadata", () => {
+  assert.deepEqual(footerVisibility(40), {
+    showBranch: false,
+    showModel: false,
+    showThinking: false,
+  });
+  assert.deepEqual(footerVisibility(100), {
+    showBranch: true,
+    showModel: true,
+    showThinking: true,
+  });
+});
 
 test("sidebar context labels match the OpenCode-style facts", () => {
   assert.equal(formatInteger(18958), "18,958");
@@ -42,11 +79,18 @@ test("sidebar context labels match the OpenCode-style facts", () => {
   assert.equal(formatContextTokens(null, null, null), "— tokens (—%) · — tokens/sec");
   assert.equal(formatContextUsed(2.4), "2% used");
   assert.equal(formatContextUsed(null), "— used");
+  assert.equal(formatSpend(0), "$0.00 spent");
+  assert.equal(formatSpend(1.234), "$1.23 spent");
+  assert.equal(formatContextSummary(2405, 0, 0.02), "2,405 tokens · 0% used · $0.02 spent");
+  assert.equal(formatCompactContext(2405, 0, 0.02, 42), "2,405 · 42/s · 0% · $0.02");
 });
 
 test("labels stay compact and safe with missing data", () => {
   assert.equal(formatCount(500_000), "500k");
   assert.equal(formatCount(1_250_000), "1.25m");
+  assert.equal(modelLabel(undefined), "no model");
+  assert.equal(contextLabel(undefined), "context —");
+  assert.equal(contextLabel({ percent: 2.64, contextWindow: 500_000 }), "2.6%/500k");
 });
 
 test("workspace column is 20% once the terminal is wide enough", () => {
@@ -138,19 +182,40 @@ test("content slot splits plan and peek evenly", () => {
   assert.deepEqual(splitContentSlot(0, 3, true), { planHeight: 0, peekHeight: 0, dividerHeight: 0 });
 });
 
-test("preview image cells fit inside the pane without upscaling", () => {
+test("workspace pane always reserves caption rows", () => {
   assert.deepEqual(workspacePaneSlots(0), { imageHeight: 0, captionHeight: 0 });
   assert.deepEqual(workspacePaneSlots(1), { imageHeight: 0, captionHeight: 1 });
-  assert.deepEqual(workspacePaneSlots(8), { imageHeight: 7, captionHeight: 1 });
-  assert.deepEqual(fitImageCells(90, 180, 10, 10, 9, 18), { columns: 10, rows: 10 });
-  assert.deepEqual(fitImageCells(180, 360, 10, 10, 9, 18), { columns: 10, rows: 10 });
-  assert.deepEqual(fitImageCells(18, 18, 10, 10, 9, 18), { columns: 2, rows: 1 });
+  assert.deepEqual(workspacePaneSlots(3), { imageHeight: 2, captionHeight: 1 });
+  assert.deepEqual(workspacePaneSlots(4), { imageHeight: 3, captionHeight: 1 });
+  assert.deepEqual(workspacePaneSlots(20), { imageHeight: 19, captionHeight: 1 });
 });
 
-test("preview caption sits under the image block", () => {
-  const placed = placeWorkspaceImage(6, 3, ["Filename: shot.png"]);
-  assert.equal(placed.imageStart, 2);
-  assert.equal(placed.imageRows, 3);
+test("images contain-fit and never upscale", () => {
+  assert.deepEqual(fitImageCells(10, 10, 40, 20, 9, 18), { columns: 2, rows: 1 });
+  assert.deepEqual(fitImageCells(4000, 3000, 36, 20, 9, 18), { columns: 36, rows: 14 });
+  assert.deepEqual(fitImageCells(4000, 1000, 36, 20, 9, 18), { columns: 36, rows: 5 });
+  assert.deepEqual(fitImageCells(800, 600, 0, 20), { columns: 0, rows: 0 });
+});
+
+test("image and caption sit on the bottom of the workspace pane", () => {
+  const placed = placeWorkspaceImage(8, 2, ["meta", "name", "dir"]);
+  assert.equal(placed.lines.length, 8);
+  assert.equal(placed.imageStart, 3);
+  assert.equal(placed.imageRows, 2);
   assert.equal(placed.captionStart, 5);
-  assert.equal(placed.lines[5], "Filename: shot.png");
+  assert.deepEqual(placed.lines.slice(5), ["meta", "name", "dir"]);
+  assert.equal(placed.lines[0], "");
+  assert.equal(placed.lines[2], "");
+});
+
+test("a full-height image still keeps the caption underneath", () => {
+  const placed = placeWorkspaceImage(8, 20, ["meta", "name", "dir"]);
+  assert.equal(placed.imageStart, 0);
+  assert.equal(placed.imageRows, 5);
+  assert.deepEqual(placed.lines.slice(5), ["meta", "name", "dir"]);
+});
+
+test("home paths use a tilde without rewriting lookalikes", () => {
+  assert.equal(compactPath("/Users/gagan/GitHub/pi", "/Users/gagan"), "~/GitHub/pi");
+  assert.equal(compactPath("/Users/gagandev/pi", "/Users/gagan"), "/Users/gagandev/pi");
 });
