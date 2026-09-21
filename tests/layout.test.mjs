@@ -25,6 +25,7 @@ import {
   parseSidebarWidthArg,
   parseSlateArgs,
   percentFromColumns,
+  sidebarPercentFromColumns,
   slateArgumentCompletions,
   withCurrent,
   withoutCurrent,
@@ -114,6 +115,11 @@ test("a preferred sidebar width is clamped and hidden on narrow terminals", () =
   assert.equal(sidebarWidthFromScreenX(140, 0), 108);
   assert.equal(sidebarHandleColumn(140, 40), 100);
   assert.equal(percentFromColumns(140, 28), 20);
+  assert.equal(sidebarPercentFromColumns(140, 28), undefined);
+  assert.equal(sidebarPercentFromColumns(140, 42), 30);
+  assert.equal(sidebarPercentFromColumns(200, 28), 0);
+  assert.equal(sidebarPercentFromColumns(200, 60), 30);
+  assert.equal(sidebarPercentFromColumns(200, 47), 24);
   assert.equal(parseSidebarPercent(36.4), 36);
   assert.equal(parseSidebarPercent(0), 0);
   assert.equal(parseSidebarPercent(81), undefined);

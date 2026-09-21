@@ -16,7 +16,7 @@ import {
   isSidebarResizeHandle,
   clampSidebarColumns,
   parseSidebarPercent,
-  percentFromColumns,
+  sidebarPercentFromColumns,
   SIDEBAR_EDITOR_RESERVE,
   SIDEBAR_MIN_TERMINAL_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -550,7 +550,7 @@ export class Sidebar implements Component {
     this.hideResizeGuide();
     this.resizing = false;
     if (next === this.resizeStartWidth || next <= 0) return;
-    const percent = percentFromColumns(this.tui?.terminal.columns ?? 0, next);
+    const percent = sidebarPercentFromColumns(this.tui?.terminal.columns ?? 0, next);
     this.setPreferredWidth(percent);
     this.actions?.persistWidth?.(percent);
   }

@@ -44,6 +44,7 @@ import {
   parseSlateArgs,
   slateArgumentCompletions,
   SLATE_USAGE,
+  SIDEBAR_PERCENT_DEFAULT,
   SIDEBAR_PERCENT_MEDIUM,
   SIDEBAR_PERCENT_NARROW,
   SIDEBAR_PERCENT_WIDE,
@@ -439,21 +440,24 @@ export default function piSlate(pi: ExtensionAPI): void {
   };
 
   const pickWidth = async (ctx: ExtensionContext): Promise<{ picked: true; width?: number } | undefined> => {
+    const percent = sidebar.preferredWidth ?? config.sidebarPercent;
     const defaultLabel = "Default (20%)";
     const narrowLabel = "Narrow (minimum)";
     const mediumLabel = "Medium (30%)";
     const wideLabel = "Wide (40%)";
-    const customLabel = "Custom…";
-    const named = config.sidebarPercent === undefined
-      || config.sidebarPercent === SIDEBAR_PERCENT_NARROW
-      || config.sidebarPercent === SIDEBAR_PERCENT_MEDIUM
-      || config.sidebarPercent === SIDEBAR_PERCENT_WIDE;
+    const customLabel = percent !== undefined
+      && percent !== SIDEBAR_PERCENT_NARROW
+      && percent !== SIDEBAR_PERCENT_DEFAULT
+      && percent !== SIDEBAR_PERCENT_MEDIUM
+      && percent !== SIDEBAR_PERCENT_WIDE
+      ? `Custom (${percent}%)`
+      : "Custom…";
     const choice = await ctx.ui.select("Sidebar width", [
-      withCurrent(defaultLabel, config.sidebarPercent === undefined),
-      withCurrent(narrowLabel, config.sidebarPercent === SIDEBAR_PERCENT_NARROW),
-      withCurrent(mediumLabel, config.sidebarPercent === SIDEBAR_PERCENT_MEDIUM),
-      withCurrent(wideLabel, config.sidebarPercent === SIDEBAR_PERCENT_WIDE),
-      withCurrent(customLabel, config.sidebarPercent !== undefined && !named),
+      withCurrent(defaultLabel, percent === undefined || percent === SIDEBAR_PERCENT_DEFAULT),
+      withCurrent(narrowLabel, percent === SIDEBAR_PERCENT_NARROW),
+      withCurrent(mediumLabel, percent === SIDEBAR_PERCENT_MEDIUM),
+      withCurrent(wideLabel, percent === SIDEBAR_PERCENT_WIDE),
+      withCurrent(customLabel, customLabel.startsWith("Custom (")),
     ]);
     if (!choice) return undefined;
     const key = withoutCurrent(choice);
@@ -462,7 +466,10 @@ export default function piSlate(pi: ExtensionAPI): void {
     if (key === mediumLabel) return { picked: true, width: SIDEBAR_PERCENT_MEDIUM };
     if (key === wideLabel) return { picked: true, width: SIDEBAR_PERCENT_WIDE };
     if (key !== customLabel) return undefined;
-    const typed = await ctx.ui.input("Sidebar percent", "30");
+    const typed = await ctx.ui.input(
+      "Sidebar percent",
+      percent !== undefined && percent > 0 ? String(percent) : "30",
+    );
     if (!typed) return undefined;
     const parsed = parseSidebarWidthArg(typed);
     if (!parsed.ok || parsed.percent === undefined) {

@@ -118,6 +118,7 @@ export const SIDEBAR_MIN_TERMINAL_WIDTH = 60;
 export const SIDEBAR_MIN_WIDTH = 28;
 export const SIDEBAR_EDITOR_RESERVE = 5;
 export const SIDEBAR_DEFAULT_RATIO = 0.2;
+export const SIDEBAR_PERCENT_DEFAULT = Math.round(SIDEBAR_DEFAULT_RATIO * 100);
 export const SIDEBAR_MAIN_MIN_WIDTH = SIDEBAR_MIN_TERMINAL_WIDTH - SIDEBAR_MIN_WIDTH;
 export const SIDEBAR_HANDLE_MAX_X = 1;
 
@@ -229,6 +230,16 @@ export function workspaceColumnWidth(totalWidth: number, preferredPercent?: numb
 export function percentFromColumns(totalWidth: number, columns: number): number {
   if (totalWidth < 1) return Math.round(SIDEBAR_DEFAULT_RATIO * 100);
   return Math.max(1, Math.min(SIDEBAR_PERCENT_MAX, Math.round((columns / totalWidth) * 100)));
+}
+
+/** Persist a drag as the same value `/slate width` understands. */
+export function sidebarPercentFromColumns(totalWidth: number, columns: number): number | undefined {
+  const fallback = workspaceColumnWidth(totalWidth);
+  if (columns <= SIDEBAR_MIN_WIDTH && fallback > SIDEBAR_MIN_WIDTH) return SIDEBAR_PERCENT_NARROW;
+  const percent = percentFromColumns(totalWidth, columns);
+  if (percent === SIDEBAR_PERCENT_DEFAULT) return undefined;
+  if (percent === SIDEBAR_PERCENT_MEDIUM || percent === SIDEBAR_PERCENT_WIDE) return percent;
+  return percent;
 }
 
 export function mainColumnWidth(totalWidth: number, preferred?: number): number {
