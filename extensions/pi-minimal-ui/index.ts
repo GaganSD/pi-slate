@@ -22,7 +22,6 @@ import { installImagePlaceholders } from "./image-placeholders.ts";
 import { GitStatusPoller } from "./git-status.ts";
 import { Sidebar } from "./sidebar.ts";
 import { estimateAssistantTokens, TokenRateTracker } from "./token-rate.ts";
-import { installTodoTool } from "./todo.ts";
 import { createWordPicker } from "./working-words.ts";
 import {
   MCP_STATUS_EVENT,
@@ -195,7 +194,6 @@ export default function piMinimalUi(pi: ExtensionAPI): void {
     sidebar.setSkillsLoaded(countSkillCommands(pi.getCommands()));
   };
 
-  installTodoTool(pi, sidebar, () => requestRender());
   pi.events.on(MCP_STATUS_EVENT, (data) => {
     sidebar.setMcpConnected(parseMcpConnectedCount(data));
   });

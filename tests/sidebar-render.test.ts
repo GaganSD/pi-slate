@@ -69,7 +69,7 @@ function fixture(t: TestContext, count = 100, scrollbar: "auto" | "always" | "hi
     { component: scroll, basis: 0, grow: 1, minSize: 1 },
     { component: dock, basis: "auto", minSize: 1 },
   ]);
-  const pane = new Text("SIDEBAR\nTodos / MCP", 0, 0);
+  const pane = new Text("SIDEBAR\nReserved / MCP", 0, 0);
   tui.setLayoutRoot(main);
   const dispose = installSidebarSplit(tui, pane);
   assert(dispose, "Fullscreen must mount the real sidebar split");
@@ -117,7 +117,7 @@ for (const scrollbar of ["auto", "always", "hidden"] as const) {
     for (let i = 0; i < 3; i++) f.tui.renderNow();
     f.editor.setText("editor\nsecond line\nthird line");
     f.tui.renderNow();
-    f.pane.setText("SIDEBAR\nUpdated todo / MCP status");
+    f.pane.setText("SIDEBAR\nUpdated reserved / MCP status");
     f.tui.renderNow();
     f.scroll.scrollToStart();
     f.tui.renderNow();

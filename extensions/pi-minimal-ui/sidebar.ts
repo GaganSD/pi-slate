@@ -24,7 +24,6 @@ import {
   sameFiles,
   type FileChange,
 } from "./files-modified.ts";
-import { planPanel, type PlanItem } from "./plan.ts";
 import { installSidebarSplit } from "./sidebar-split.ts";
 import { displayedTokenRate } from "./token-rate.ts";
 import type { WorkspaceView } from "./workspace.ts";
@@ -54,11 +53,9 @@ export class Sidebar implements Component {
   private splitDispose?: () => void;
   private view?: WorkspaceView;
   private contextData: SidebarContextData = { tokens: null, percent: null, tokensPerSec: 0 };
-  private lastSlots = { planHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
+  private lastSlots = { reservedHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
   private mcpConnected: number | null = null;
   private skillsLoaded = 0;
-  private todos: PlanItem[] = [];
-  private todoRev = 0;
   private files: FileChange[] = [];
   private filesRev = 0;
   private filesOffset = 0;
@@ -121,14 +118,6 @@ export class Sidebar implements Component {
     this.tui?.requestRender();
   }
 
-  setTodos(todos: PlanItem[]): void {
-    if (sameTodos(this.todos, todos)) return;
-    this.todos = todos;
-    this.todoRev += 1;
-    this.contentCached = undefined;
-    this.tui?.requestRender();
-  }
-
   setCwd(cwd: string): void {
     if (this.cwd === cwd) return;
     this.cwd = cwd;
@@ -167,9 +156,8 @@ export class Sidebar implements Component {
   }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    const { filesHeight, filesDivider, planHeight, dividerHeight, peekHeight } = this.lastSlots;
-    const planStart = filesHeight + filesDivider;
-    const peekStart = planStart + planHeight + dividerHeight;
+    const { filesHeight, filesDivider, reservedHeight, dividerHeight, peekHeight } = this.lastSlots;
+    const peekStart = filesHeight + filesDivider + reservedHeight + dividerHeight;
     if (event.type === "wheel" && event.y >= 0 && event.y < filesHeight) {
       if (!this.scrollFiles(-(event.wheelDelta ?? 0))) return undefined;
       return { handled: true };
@@ -201,7 +189,7 @@ export class Sidebar implements Component {
       height,
       sidebarDockLines(),
     );
-    const contentKey = `${width}x${contentHeight}:${this.todoRev}:${this.filesRev}:${this.filesOffset}:${this.view?.id ?? ""}`;
+    const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.view?.id ?? ""}`;
     const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${displayedTokenRate(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
       ? this.contentCached.lines
@@ -227,7 +215,7 @@ export class Sidebar implements Component {
     this.cwd = "";
     this.contentCached = undefined;
     this.dockCached = undefined;
-    this.lastSlots = { planHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
+    this.lastSlots = { reservedHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
     this.tui = undefined;
     this.theme = undefined;
   }
@@ -254,40 +242,19 @@ export class Sidebar implements Component {
 
   private contentLines(width: number, height: number, theme: Theme | undefined): string[] {
     if (height < 1) {
-      this.lastSlots = { planHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
+      this.lastSlots = { reservedHeight: 0, peekHeight: 0, dividerHeight: 0, filesDivider: 0, filesHeight: 0 };
       return [];
     }
-    const { filesHeight, filesDivider, planHeight, dividerHeight, peekHeight } = this.lastSlots = splitSidebarContent(
+    const { filesHeight, filesDivider, reservedHeight, dividerHeight, peekHeight } = this.lastSlots = splitSidebarContent(
       height,
       filesWidgetDesiredHeight(this.files.length),
     );
     const lines: string[] = [...this.filesLines(width, filesHeight, theme)];
     this.pushRule(lines, filesDivider, width, theme);
-    lines.push(...this.padBlock(this.planLines(width, planHeight, theme), planHeight, width, theme));
+    lines.push(...this.padBlock([], reservedHeight, width, theme));
     this.pushRule(lines, dividerHeight, width, theme);
     lines.push(...this.peekLines(width, peekHeight, theme));
     return lines;
-  }
-
-  private planLines(width: number, maxHeight: number, theme: Theme | undefined): string[] {
-    if (maxHeight < 1) return [];
-    if (this.todos.length === 0) {
-      const lines = [this.heading("Plan", width, theme)];
-      if (maxHeight > 1) lines.push(this.body("none", width, theme, "dim"));
-      return lines;
-    }
-    if (!theme) return [];
-    return planPanel(this.todos, maxHeight).map((line) => {
-      if (line.type === "heading") return this.heading(`Plan ${line.done}/${line.total}`, width, theme);
-      if (line.type === "overflow") return this.body(`+${line.count} more`, width, theme, "dim");
-      const mark = line.item.status === "done"
-        ? theme.fg("success", "✓")
-        : line.item.status === "in_progress"
-          ? theme.fg("accent", "◐")
-          : theme.fg("dim", "○");
-      const text = line.item.status === "done" ? theme.fg("dim", line.item.text) : theme.fg("muted", line.item.text);
-      return this.decorateLine(`${" ".repeat(line.depth)}${mark} ${text}`, width, theme);
-    });
   }
 
   private peekLines(width: number, maxHeight: number, theme: Theme | undefined): string[] {
@@ -367,17 +334,4 @@ export class Sidebar implements Component {
     if (line.length === 0) return theme.fg("borderMuted", "│");
     return `${theme.fg("borderMuted", "│")}${truncateToWidth(` ${line}`, Math.max(0, width - 1))}`;
   }
-}
-
-function sameTodos(left: PlanItem[], right: PlanItem[]): boolean {
-  if (left === right) return true;
-  if (left.length !== right.length) return false;
-  return left.every((item, index) => {
-    const other = right[index];
-    return other !== undefined
-      && item.id === other.id
-      && item.status === other.status
-      && item.parentId === other.parentId
-      && item.text === other.text;
-  });
 }

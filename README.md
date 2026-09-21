@@ -24,10 +24,9 @@ For a project-local install, use `pi install -l git:github.com/GaganSD/pi-extens
 
 - Centered Pi header and compact footer.
 - A muted `pi-minimal` theme.
-- A right sidebar with **Files Changed**, **Plan**, **Preview**, and **Context**.
+- A right sidebar with **Files Changed**, a reserved empty pane, **Preview**, and **Context**.
 - Files Changed reads local `git status` at startup and after Pi work; it does not poll while Pi is idle.
 - Image peek: put the cursor on an `[image-N]` attachment token to preview it in the sidebar. Image-capable terminals render the image; other terminals get a text fallback.
-- A compact, session-backed `todo` tool for the sidebar plan.
 - `/minimal-ui` toggles comfortable/compact editor density and the standard/minimal footer. Preferences are stored in `~/.pi/agent/pi-minimal-ui.json`.
 
 The split sidebar is used in fullscreen TUI mode. On narrower terminals or regular TUI mode, Pi falls back to an overlay; non-interactive Pi modes have no UI changes.
@@ -38,11 +37,9 @@ The split sidebar is used in fullscreen TUI mode. On narrower terminals or regul
 - A Git repository for Files Changed; outside one it simply shows no files.
 - An image-capable terminal (Kitty, iTerm2, Ghostty, WezTerm, or Warp) for inline image previews.
 
-## Design and trade-offs
+## Design
 
-Pi keeps its core minimal by leaving workflow choices to packages. `pi-minimal-ui` follows that boundary for most features: it is local, uses Pi's extension API, and avoids dependencies beyond Pi's peer packages.
-
-The `todo` tool is the intentional exception. Pi deliberately has no built-in todo system; this package adds one only to make the Plan panel useful. If you do not want that agent-facing tool, this package is not yet the right fit—use the bundled theme alone or remove the tool in a fork.
+Pi keeps its core minimal by leaving workflow choices to packages. `pi-minimal-ui` stays presentation-first: it is local, uses Pi's extension API, and avoids agent-facing workflow tools and dependencies beyond Pi's peer packages.
 
 ## Remove
 

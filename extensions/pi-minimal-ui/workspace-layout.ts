@@ -21,27 +21,6 @@ export function sidebarRowSlots(
   };
 }
 
-export function splitContentSlot(
-  height: number,
-  planCount: number,
-  hasPeek: boolean,
-): { planHeight: number; peekHeight: number; dividerHeight: number } {
-  const slotHeight = Math.max(0, Math.floor(height));
-  if (slotHeight === 0) return { planHeight: 0, peekHeight: 0, dividerHeight: 0 };
-  if (planCount === 0) return { planHeight: 0, peekHeight: slotHeight, dividerHeight: 0 };
-  if (!hasPeek) return { planHeight: slotHeight, peekHeight: 0, dividerHeight: 0 };
-  if (slotHeight === 1) return { planHeight: 1, peekHeight: 0, dividerHeight: 0 };
-  if (slotHeight === 2) return { planHeight: 1, peekHeight: 1, dividerHeight: 0 };
-
-  const remaining = slotHeight - 1;
-  const planHeight = Math.floor(remaining / 2);
-  return {
-    planHeight,
-    peekHeight: remaining - planHeight,
-    dividerHeight: 1,
-  };
-}
-
 export function filesWidgetDesiredHeight(fileCount: number): number {
   if (fileCount <= 0) return 2;
   return Math.min(FILES_WIDGET_MAX_LINES, 1 + fileCount);
@@ -53,14 +32,14 @@ export function splitSidebarContent(
 ): {
   filesHeight: number;
   filesDivider: number;
-  planHeight: number;
+  reservedHeight: number;
   dividerHeight: number;
   peekHeight: number;
 } {
   const slotHeight = Math.max(0, Math.floor(height));
   const filesWant = Math.max(0, Math.min(FILES_WIDGET_MAX_LINES, Math.floor(filesDesired)));
   if (slotHeight === 0) {
-    return { filesHeight: 0, filesDivider: 0, planHeight: 0, dividerHeight: 0, peekHeight: 0 };
+    return { filesHeight: 0, filesDivider: 0, reservedHeight: 0, dividerHeight: 0, peekHeight: 0 };
   }
 
   const minRest = 2;
@@ -73,11 +52,16 @@ export function splitSidebarContent(
   const rest = slotHeight - filesHeight;
   if (filesHeight > 0 && rest >= 3) filesDivider = 1;
 
-  const upper = splitContentSlot(slotHeight - filesHeight - filesDivider, 1, true);
+  const contentHeight = slotHeight - filesHeight - filesDivider;
+  const dividerHeight = contentHeight >= 3 ? 1 : 0;
+  const availableHeight = contentHeight - dividerHeight;
+  const reservedHeight = availableHeight > 0 ? Math.max(1, Math.floor(availableHeight / 2)) : 0;
   return {
     filesHeight,
     filesDivider,
-    ...upper,
+    reservedHeight,
+    dividerHeight,
+    peekHeight: availableHeight - reservedHeight,
   };
 }
 
