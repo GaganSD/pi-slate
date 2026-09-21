@@ -39,23 +39,41 @@ import {
   mainColumnWidth,
   modelLabel,
   parseMcpConnectedCount,
+  parseMessageLength,
+  parseMessageLengthArg,
   parseSidebarPercent,
   parseSidebarWidthArg,
   parseSlateArgs,
+  resolveMessageLength,
+  messageLengthMessage,
   slateArgumentCompletions,
   SLATE_USAGE,
   SIDEBAR_PERCENT_DEFAULT,
   SIDEBAR_PERCENT_MEDIUM,
   SIDEBAR_PERCENT_NARROW,
   SIDEBAR_PERCENT_WIDE,
+  MESSAGE_LENGTH_DEFAULT,
+  MESSAGE_LENGTH_LONG,
+  MESSAGE_LENGTH_SHORT,
   withCurrent,
   withoutCurrent,
 } from "./layout.ts";
+import {
+  ghCreateIssueArgs,
+  issueTemplate,
+  newIssueUrl,
+  openUrlArgs,
+  parseGhIssueUrl,
+  SLATE_ISSUES_URL,
+  SLATE_NEW_ISSUE_URL,
+} from "./bug.ts";
+import { syncMessageWindow, type MessageWindow } from "./message-window.ts";
 
 type SlateConfig = {
   density: "comfortable" | "compact";
   footer: "standard" | "minimal";
   sidebarPercent?: number;
+  messageLength?: number | "all";
 };
 
 const CONFIG_PATH = join(getAgentDir(), "pi-slate.json");
@@ -64,18 +82,32 @@ const DEFAULT_CONFIG: SlateConfig = {
   footer: "standard",
 };
 
+function loadMessageLength(value: unknown): number | "all" | undefined {
+  if (value === "all") return "all";
+  return parseMessageLength(value);
+}
+
 function loadConfig(): SlateConfig {
   try {
     const value = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<SlateConfig>;
     const sidebarPercent = parseSidebarPercent(value.sidebarPercent);
+    const messageLength = loadMessageLength(value.messageLength);
     return {
       density: value.density === "compact" ? "compact" : "comfortable",
       footer: value.footer === "minimal" ? "minimal" : "standard",
       ...(sidebarPercent === undefined ? {} : { sidebarPercent }),
+      ...(messageLength === undefined ? {} : { messageLength }),
     };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
+}
+
+function withMessageLength(current: SlateConfig, messageLength: number | "all" | undefined): SlateConfig {
+  const next = { ...current };
+  if (messageLength === undefined) delete next.messageLength;
+  else next.messageLength = messageLength;
+  return next;
 }
 
 function saveConfig(config: SlateConfig): void {
@@ -208,8 +240,14 @@ export default function piSlate(pi: ExtensionAPI): void {
   let config = loadConfig();
   let currentContext: ExtensionContext | undefined;
   let activeEditor: CustomEditor | undefined;
+  let activeTui: TUI | undefined;
+  let messageWindow: MessageWindow | undefined;
   const tokenRate = new TokenRateTracker();
   let requestRender = (_force = false) => {};
+
+  const syncVisibleMessages = (): void => {
+    messageWindow = syncMessageWindow(messageWindow, activeTui, resolveMessageLength(config.messageLength));
+  };
 
   const getContext = (): ExtensionContext => {
     if (!currentContext) throw new Error("pi-slate has not received a session context");
@@ -293,13 +331,16 @@ export default function piSlate(pi: ExtensionAPI): void {
     });
     ctx.ui.setTitle(`Pi · ${basename(ctx.cwd)}`);
     ctx.ui.setHeader((tui, theme) => {
+      activeTui = tui;
       requestRender = (force = false) => tui.requestRender(force);
       sidebar.attach(tui, theme);
       tokenRate.setOnChange(() => syncSidebar(getContext()));
       syncSidebar(ctx);
+      queueMicrotask(syncVisibleMessages);
       return new MinimalHeader(theme, getContext, columnWidth);
     });
     ctx.ui.setFooter((tui, theme, footerData) => {
+      activeTui = tui;
       requestRender = (force = false) => tui.requestRender(force);
       return new MinimalFooter(tui, theme, footerData, getContext, () => config, columnWidth);
     });
@@ -356,6 +397,7 @@ export default function piSlate(pi: ExtensionAPI): void {
     currentContext = ctx;
     if (event.message.role === "assistant") tokenRate.endMessage();
     syncSidebar(ctx);
+    syncVisibleMessages();
   });
   pi.on("before_agent_start", () => {
     // Last Turn is the last user prompt, not each LLM round inside it.
@@ -393,12 +435,16 @@ export default function piSlate(pi: ExtensionAPI): void {
   });
   pi.on("session_tree", (_event, ctx) => {
     sidebar.setTurnImpact(turnImpact.restore(ctx.sessionManager.getBranch()));
+    syncVisibleMessages();
   });
   pi.on("session_shutdown", (_event, ctx) => {
     tokenRate.dispose();
     images.dispose();
     files.dispose();
     diffs.clear();
+    messageWindow?.dispose();
+    messageWindow = undefined;
+    activeTui = undefined;
     sidebar.dispose();
     requestRender(true);
     if (ctx.mode !== "tui") return;
@@ -417,6 +463,7 @@ export default function piSlate(pi: ExtensionAPI): void {
       config = next;
       sidebar.setPreferredWidth(config.sidebarPercent);
       activeEditor?.setPaddingX(config.density === "compact" ? 0 : 1);
+      syncVisibleMessages();
       requestRender();
       ctx.ui.notify(message, "info");
     } catch (error) {
@@ -487,8 +534,96 @@ export default function piSlate(pi: ExtensionAPI): void {
     return { picked: true, width: parsed.percent };
   };
 
+  const pickMessageLength = async (ctx: ExtensionContext): Promise<{ picked: true; value?: number | "all" } | undefined> => {
+    const current = config.messageLength;
+    const defaultLabel = `Default (${MESSAGE_LENGTH_DEFAULT})`;
+    const shortLabel = String(MESSAGE_LENGTH_SHORT);
+    const longLabel = String(MESSAGE_LENGTH_LONG);
+    const allLabel = "All";
+    const customLabel = typeof current === "number"
+      && current !== MESSAGE_LENGTH_DEFAULT
+      && current !== MESSAGE_LENGTH_SHORT
+      && current !== MESSAGE_LENGTH_LONG
+      ? `Custom (${current})`
+      : "Custom…";
+    const choice = await ctx.ui.select("Message length", [
+      withCurrent(defaultLabel, current === undefined || current === MESSAGE_LENGTH_DEFAULT),
+      withCurrent(shortLabel, current === MESSAGE_LENGTH_SHORT),
+      withCurrent(longLabel, current === MESSAGE_LENGTH_LONG),
+      withCurrent(allLabel, current === "all"),
+      withCurrent(customLabel, customLabel.startsWith("Custom (")),
+    ]);
+    if (!choice) return undefined;
+    const key = withoutCurrent(choice);
+    if (key === defaultLabel) return { picked: true };
+    if (key === shortLabel) return { picked: true, value: MESSAGE_LENGTH_SHORT };
+    if (key === longLabel) return { picked: true, value: MESSAGE_LENGTH_LONG };
+    if (key === allLabel) return { picked: true, value: "all" };
+    if (key !== customLabel) return undefined;
+    const typed = await ctx.ui.input(
+      "Visible messages",
+      typeof current === "number" ? String(current) : String(MESSAGE_LENGTH_DEFAULT),
+    );
+    if (!typed) return undefined;
+    const parsed = parseMessageLengthArg(typed);
+    if (!parsed.ok) {
+      ctx.ui.notify(SLATE_USAGE, "error");
+      return undefined;
+    }
+    return { picked: true, value: parsed.value };
+  };
+
+  const openUrl = async (url: string): Promise<boolean> => {
+    const { command, args } = openUrlArgs(url);
+    const result = await pi.exec(command, args, { timeout: 5000 });
+    return result.code === 0;
+  };
+
+  const fileBug = async (ctx: ExtensionContext): Promise<void> => {
+    const title = (await ctx.ui.input("Issue title", "Short summary"))?.trim();
+    if (!title) return;
+    const body = await ctx.ui.editor(
+      "Issue details",
+      issueTemplate({
+        slateVersion: "0.1.0",
+        piVersion: VERSION,
+        platform: `${process.platform} ${process.arch}`,
+      }),
+    );
+    if (body === undefined) return;
+    const created = await pi.exec("gh", ghCreateIssueArgs(title, body), { timeout: 20000 });
+    if (created.code === 0) {
+      const url = parseGhIssueUrl(created.stdout) ?? SLATE_ISSUES_URL;
+      ctx.ui.notify(`Filed ${url}`, "info");
+      return;
+    }
+    const openForm = await ctx.ui.confirm("Could not file with gh", "Open a new issue in the browser?");
+    if (!openForm) {
+      ctx.ui.notify("Issue not filed", "warning");
+      return;
+    }
+    const opened = await openUrl(newIssueUrl(title, body));
+    ctx.ui.notify(opened ? "Opened GitHub issue form" : `Open ${SLATE_NEW_ISSUE_URL}`, opened ? "info" : "error");
+  };
+
+  const handleBug = async (ctx: ExtensionContext, action?: "file" | "open"): Promise<void> => {
+    let next = action;
+    if (!next) {
+      const choice = await ctx.ui.select("Slate bug", ["File an issue", "Open issues page"]);
+      if (choice === "File an issue") next = "file";
+      else if (choice === "Open issues page") next = "open";
+      else return;
+    }
+    if (next === "open") {
+      const opened = await openUrl(SLATE_ISSUES_URL);
+      ctx.ui.notify(opened ? "Opened GitHub issues" : `Open ${SLATE_ISSUES_URL}`, opened ? "info" : "error");
+      return;
+    }
+    await fileBug(ctx);
+  };
+
   pi.registerCommand("slate", {
-    description: "Density, footer, or sidebar width",
+    description: "Density, footer, sidebar width, message length, or file a bug",
     getArgumentCompletions: slateArgumentCompletions,
     handler: async (args, ctx) => {
       const parsed = parseSlateArgs(args);
@@ -499,10 +634,12 @@ export default function piSlate(pi: ExtensionAPI): void {
 
       let kind = parsed.kind;
       if (kind === "menu") {
-        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Sidebar width"]);
+        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Sidebar width", "Message length", "File a bug"]);
         if (setting === "Density") kind = "density";
         else if (setting === "Footer") kind = "footer";
         else if (setting === "Sidebar width") kind = "width-menu";
+        else if (setting === "Message length") kind = "message-length-menu";
+        else if (setting === "File a bug") kind = "bug-menu";
         else return;
       }
 
@@ -522,6 +659,23 @@ export default function piSlate(pi: ExtensionAPI): void {
 
       if (parsed.kind === "width") {
         apply(withSidebarPercent(config, parsed.width), widthMessage(parsed.width), ctx);
+        return;
+      }
+
+      if (parsed.kind === "message-length") {
+        apply(withMessageLength(config, parsed.value), messageLengthMessage(parsed.value), ctx);
+        return;
+      }
+
+      if (kind === "message-length" || kind === "message-length-menu") {
+        const picked = await pickMessageLength(ctx);
+        if (!picked) return;
+        apply(withMessageLength(config, picked.value), messageLengthMessage(picked.value), ctx);
+        return;
+      }
+
+      if (kind === "bug" || kind === "bug-menu") {
+        await handleBug(ctx, parsed.kind === "bug" ? parsed.action : undefined);
         return;
       }
 
