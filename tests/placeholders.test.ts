@@ -38,6 +38,35 @@ test("leaves ordinary pasted text alone", () => {
   assert.equal(store.size, 0);
 });
 
+test("previews percent-encoded clipboard paths", () => {
+  const store = new Map<string, string>();
+  assert.equal(rewriteClipboardPaths("/tmp/Screen%20Shot%202026-03-22.png", 1, store), "[image-1]");
+  assert.equal(store.get("1"), "/tmp/Screen Shot 2026-03-22.png");
+  assert.equal(rewriteClipboardPaths("file:///tmp/Screen%20Shot.png", 2, store), "[image-2]");
+  assert.equal(store.get("2"), "/tmp/Screen Shot.png");
+});
+
+test("keeps raw clipboard paths that only look percent-encoded", () => {
+  const store = new Map<string, string>();
+  assert.equal(rewriteClipboardPaths("/tmp/50%%20off.png", 3, store), "[image-3]");
+  assert.equal(store.get("3"), "/tmp/50%%20off.png");
+});
+
+test("previews screenshot paths with escaped spaces inside text", () => {
+  const store = new Map<string, string>();
+  const escaped =
+    "/Users/melange/Desktop/screenshots/Screenshot\\ 2026-09-08\\ at\\ 14.02.06.jpeg";
+  assert.equal(rewriteClipboardPaths(`see ${escaped} for the bug`, 1, store), "see [image-1] for the bug");
+  assert.equal(store.get("1"), "/Users/melange/Desktop/screenshots/Screenshot 2026-09-08 at 14.02.06.jpeg");
+});
+
+test("previews backtick-quoted clipboard paths", () => {
+  const store = new Map<string, string>();
+  const spaced = "/Users/melange/Desktop/screenshots/Screenshot 2026-09-08 at 14.02.06.jpeg";
+  assert.equal(rewriteClipboardPaths("paste `" + spaced + "` here", 1, store), "paste [image-1] here");
+  assert.equal(store.get("1"), spaced);
+});
+
 test("rewrites a dropped image path to the next placeholder", () => {
   const dropped = "/Users/gagandevagiri/Downloads/images/4cef6d34aa241a4e98b472556ff933db.jpg";
   const spaced = "/Users/gagan/Desktop/Screenshot 2026-03-22 at 4.12.00 PM.png";
