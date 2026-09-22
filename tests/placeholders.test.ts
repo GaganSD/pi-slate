@@ -5,6 +5,7 @@ import {
   imageTokenAtCursor,
   mimeTypeForImagePath,
   nextImageNumber,
+  noticeForInsert,
   rewriteClipboardPaths,
   transformSubmittedText,
   type ImageAttachment,
@@ -36,6 +37,28 @@ test("leaves ordinary pasted text alone", () => {
   const store = new Map<string, string>();
   assert.equal(rewriteClipboardPaths("hello", nextImageNumber(""), store), "hello");
   assert.equal(store.size, 0);
+});
+
+test("flushes a rewrite notice when the insert count crosses the interval", () => {
+  // Input arrives in chunks, so the count skips over exact multiples.
+  assert.equal(noticeForInsert(9, 8), undefined);
+  assert.notEqual(noticeForInsert(12, 8), undefined);
+  // One notice per interval crossed, not one per insert inside it.
+  assert.equal(noticeForInsert(13, 12), undefined);
+  assert.equal(noticeForInsert(19, 13), undefined);
+  assert.notEqual(noticeForInsert(21, 19), undefined);
+  // A fresh composer stays quiet until the first interval is reached.
+  assert.equal(noticeForInsert(0, 0), undefined);
+  assert.equal(noticeForInsert(4, 0), undefined);
+});
+
+test("cycles rewrite notices instead of repeating one", () => {
+  const first = noticeForInsert(10, 9);
+  const second = noticeForInsert(20, 19);
+  assert.ok(first !== undefined && second !== undefined);
+  assert.notEqual(first, second);
+  // Single-step callers keep the original cadence.
+  assert.equal(noticeForInsert(10), first);
 });
 
 test("previews percent-encoded clipboard paths", () => {

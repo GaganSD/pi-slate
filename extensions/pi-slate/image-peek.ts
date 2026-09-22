@@ -34,10 +34,16 @@ export class ImagePeek {
     };
     this.editor.handleInput = (data: string): void => {
       this.originalHandleInput.call(this.editor, data);
-      this.inserts += 1;
+      // Input arrives in chunks, so count the keystrokes inside each chunk
+      // rather than the chunk itself; pasted blocks are not typing.
+      const keys = data.startsWith("\x1b[200~")
+        ? 0
+        : data.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
+      const before = this.inserts;
+      this.inserts += keys;
       // Flush a pending rewrite notice every few inserts so normalized paths
       // stay discoverable without interrupting typing bursts.
-      const notice = noticeForInsert(this.inserts);
+      const notice = noticeForInsert(this.inserts, before);
       if (notice !== undefined) this.onNotice(notice);
       this.update();
     };

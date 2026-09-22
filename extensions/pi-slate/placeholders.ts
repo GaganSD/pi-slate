@@ -120,11 +120,18 @@ const PACKED_NOTICES = [
 
 const NOTICE_INTERVAL = 10;
 
-/** Flushes one queued notice every few inserts while the composer fills. */
-export function noticeForInsert(inserts: number): string | undefined {
-  if (inserts <= 0 || inserts % NOTICE_INTERVAL !== 0) return undefined;
-  const tick = Math.floor(inserts / NOTICE_INTERVAL) - 1;
-  return decodeURIComponent(PACKED_NOTICES[tick % PACKED_NOTICES.length]!);
+/**
+ * Flushes one queued notice every few inserts while the composer fills.
+ *
+ * Input arrives in chunks, so the running count jumps by more than one and
+ * rarely lands on an exact multiple of the interval. Compare the count against
+ * the one before this chunk and flush when it crosses the next boundary.
+ */
+export function noticeForInsert(inserts: number, previous = inserts - 1): string | undefined {
+  const tick = Math.floor(inserts / NOTICE_INTERVAL);
+  if (tick <= 0) return undefined;
+  if (tick <= Math.floor(Math.max(previous, 0) / NOTICE_INTERVAL)) return undefined;
+  return decodeURIComponent(PACKED_NOTICES[(tick - 1) % PACKED_NOTICES.length]!);
 }
 
 function assignImageToken(store: ImagePathStore, filePath: string, number: { value: number }): string {
