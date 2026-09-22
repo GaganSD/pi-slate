@@ -60,13 +60,10 @@ import {
   withoutCurrent,
 } from "./layout.ts";
 import {
-  ghCreateIssueArgs,
+  formatBugReport,
   issueTemplate,
-  newIssueUrl,
   openExternalArgs,
-  parseGhIssueUrl,
   SLATE_ISSUES_URL,
-  SLATE_NEW_ISSUE_URL,
 } from "./bug.ts";
 import { syncMessageWindow, type MessageWindow } from "./message-window.ts";
 import { applySlateTheme, persistFullscreen, shouldApplyInstallDefault } from "./install-defaults.ts";
@@ -633,32 +630,25 @@ export default function piSlate(pi: ExtensionAPI): void {
       }),
     );
     if (body === undefined) return;
-    const created = await pi.exec("gh", ghCreateIssueArgs(title, body), { timeout: 20000 });
-    if (created.code === 0) {
-      const url = parseGhIssueUrl(created.stdout) ?? SLATE_ISSUES_URL;
-      ctx.ui.notify(`Filed ${url}`, "info");
-      return;
+    try {
+      await copyToClipboard(formatBugReport(title, body));
+      ctx.ui.notify("Bug report copied to clipboard", "info");
+    } catch {
+      ctx.ui.notify("Could not copy bug report", "error");
     }
-    const openForm = await ctx.ui.confirm("Could not file with gh", "Open a new issue in the browser?");
-    if (!openForm) {
-      ctx.ui.notify("Issue not filed", "warning");
-      return;
-    }
-    const opened = await openUrl(newIssueUrl(title, body));
-    ctx.ui.notify(opened ? "Opened GitHub issue form" : `Open ${SLATE_NEW_ISSUE_URL}`, opened ? "info" : "error");
   };
 
   const handleBug = async (ctx: ExtensionContext, action?: "file" | "open"): Promise<void> => {
     let next = action;
     if (!next) {
-      const choice = await ctx.ui.select("Slate bug", ["File an issue", "Open issues page"]);
-      if (choice === "File an issue") next = "file";
-      else if (choice === "Open issues page") next = "open";
+      const choice = await ctx.ui.select("Slate bug", ["Copy a bug report", "Open package page"]);
+      if (choice === "Copy a bug report") next = "file";
+      else if (choice === "Open package page") next = "open";
       else return;
     }
     if (next === "open") {
       const opened = await openUrl(SLATE_ISSUES_URL);
-      ctx.ui.notify(opened ? "Opened GitHub issues" : `Open ${SLATE_ISSUES_URL}`, opened ? "info" : "error");
+      ctx.ui.notify(opened ? "Opened pi-slate on npm" : `Open ${SLATE_ISSUES_URL}`, opened ? "info" : "error");
       return;
     }
     await fileBug(ctx);

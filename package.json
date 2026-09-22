@@ -4,25 +4,34 @@
   "description": "Quiet Pi TUI: header, footer, sidebar, and a muted dark theme.",
   "type": "module",
   "license": "MIT",
+  "author": "Gagan Devagiri",
   "keywords": [
     "pi-package",
+    "pi",
+    "pi-coding-agent",
     "pi-extension",
     "pi-theme",
-    "terminal-ui"
+    "terminal-ui",
+    "tui",
+    "sidebar",
+    "theme"
   ],
-  "repository": "github:GaganSD/pi-slate",
-  "bugs": "https://github.com/GaganSD/pi-slate/issues",
-  "homepage": "https://github.com/GaganSD/pi-slate#readme",
+  "homepage": "https://www.npmjs.com/package/pi-slate",
   "files": [
+    "assets",
     "extensions",
     "themes",
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "node --test --experimental-strip-types tests/**/*.test.ts tests/**/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "npm test"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -43,6 +52,7 @@
     ],
     "themes": [
       "./themes/pi-slate.json"
-    ]
+    ],
+    "image": "https://cdn.jsdelivr.net/npm/pi-slate@0.1.0/assets/slate-overview.png"
   }
 }

@@ -185,9 +185,7 @@ export function messageLengthMessage(value: number | "all" | undefined): string 
   return `Message length set to ${value}`;
 }
 
-export const SLATE_ISSUES_URL = "https://github.com/GaganSD/pi-slate/issues";
-export const SLATE_NEW_ISSUE_URL = `${SLATE_ISSUES_URL}/new`;
-export const SLATE_REPO = "GaganSD/pi-slate";
+export const SLATE_ISSUES_URL = "https://www.npmjs.com/package/pi-slate";
 export const SLATE_VERSION = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 ).version as string;
