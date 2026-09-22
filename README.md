@@ -1,23 +1,23 @@
 <h1 align="center">Slate 🌱</h1>
 
 <p align="center">
-  A minimal terminal UI/UX for Pi Coding Agent with a customizable sidebar that keeps your work in view.
+  A minimal terminal UI/UX for Pi Coding Agent with a customizable sidebar that keeps your work in view
   <div style="height: 20px;"></div>
   <img src="assets/slate-overview.png" alt="Slate session with sidebar preview" />
 </p>
 
 ## Setup
 
-**Option 1: Copy-paste this into your Pi agent**
+**Option 1: Pi-agent Prompt**
 
 ```
 - Save my pi-agent's tui and themes. Safely disable them for now.
 - Install pi-slate to my pi-agent using: `pi install npm:pi-slate`
 - Enable fullscreen mode. Slate replaces Pi's existing TUI; resolve any conflicts. Ask me to /reload session once complete.
-- For any existing replaced tui, list top 3 suggestions to integrate into pi-slate.
+- For any existing replaced tui, list top 3 suggestions to integrate into pi-slate
 ```
 
-**Option 2: Copy-paste this in your bash**
+**Option 2: Bash**
 
 ```bash
 pi install npm:pi-slate
@@ -52,7 +52,7 @@ Inspect work-tree files and recent request activity directly from the terminal.
 
 ### Session Context Overview
 
-Slate keeps usage and spend visible at the bottom. Context usage may be estimated when provider usage is unavailable. Slate is fully deterministic and doesn't use your LLM.
+Slate keeps usage and spend visible at the bottom. Context usage may be estimated when provider usage is unavailable. (Slate doesn't use your LLM to estimate this)
 
 <p align="center">
   <img src="assets/slate-context.png" alt="Context usage, spend, skills, and MCP count" width="567" />
