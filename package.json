@@ -1,6 +1,6 @@
 {
   "name": "pi-slate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Quiet Pi TUI: header, footer, sidebar, and a muted dark theme.",
   "type": "module",
   "license": "MIT",
