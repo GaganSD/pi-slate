@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import type { CustomEditor, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Editor } from "@earendil-works/pi-tui";
 import { ImagePeek } from "./image-peek.ts";
@@ -28,12 +28,16 @@ export type ImagePlaceholders = {
 };
 
 function loadImage(filePath: string): ImageAttachment | undefined {
-  if (!existsSync(filePath)) return undefined;
-  return {
-    type: "image",
-    data: readFileSync(filePath).toString("base64"),
-    mimeType: mimeTypeForImagePath(filePath),
-  };
+  try {
+    if (!statSync(filePath).isFile()) return undefined;
+    return {
+      type: "image",
+      data: readFileSync(filePath).toString("base64"),
+      mimeType: mimeTypeForImagePath(filePath),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function installEditorPatch(
@@ -72,11 +76,10 @@ function installEditorPatch(
 export function installImagePlaceholders(
   pi: ExtensionAPI,
   workspace: Sidebar,
-  onNotice: (text: string) => void = () => {},
 ): ImagePlaceholders {
   const store: ImagePathStore = new Map();
   let peek: ImagePeek | undefined;
-  const uninstallEditorPatch = installEditorPatch(store, () => peek?.update());
+  const uninstallEditorPatch = installEditorPatch(store, () => peek?.rewrite());
 
   pi.registerMarkdownTransformer((markdown, { messageType }) => {
     if (messageType !== "user") return markdown;
@@ -99,7 +102,7 @@ export function installImagePlaceholders(
   return {
     attachEditor(editor) {
       peek?.dispose();
-      peek = new ImagePeek(store, editor, workspace, loadImage, onNotice);
+      peek = new ImagePeek(store, editor, workspace, loadImage);
     },
     dispose() {
       peek?.dispose();
