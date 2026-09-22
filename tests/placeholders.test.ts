@@ -7,6 +7,7 @@ import test from "node:test";
 import type { CustomEditor, ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 import { installImagePlaceholders } from "../extensions/pi-slate/image-placeholders.ts";
+import { ImagePeek } from "../extensions/pi-slate/image-peek.ts";
 import {
   formatImageLocation,
   imageTokenAtCursor,
@@ -138,6 +139,18 @@ test("does not attach local files hidden inside URLs or longer path names", () =
     assert.equal(store.size, 0);
     assert.deepEqual(transformSubmittedText(input, store, loadFixture), { text: input, images: [] });
   }
+});
+
+test("attaches sentence-final paths without accepting longer filename extensions", () => {
+  const filePath = image("sentence.png");
+  for (const suffix of [".", ". Next sentence", ".\nNext paragraph"]) {
+    const input = `See ${filePath}${suffix}`;
+    assert.equal(rewriteClipboardPaths(input, 1, new Map()), `See [image-1]${suffix}`);
+    assert.deepEqual(transformSubmittedText(input, new Map(), loadFixture), {
+      text: `See [image-1]${suffix}`, images: [loadFixture(filePath)],
+    });
+  }
+  assert.equal(rewriteClipboardPaths(`See ${filePath}.bak`, 1, new Map()), `See ${filePath}.bak`);
 });
 
 test("recognizes file URLs and escaped paths in every supported wrapper", () => {
@@ -293,6 +306,65 @@ test("waits for complete character-by-character drops", async (t) => {
   assert.equal(editor.getText(), "[image-1]");
   assert.equal(sidebar.currentViewId(), `image:1:${prefix}`);
 
+});
+
+test("keeps collapsed paste contents when a screenshot arrives as characters", async (t) => {
+  const filePath = image("with-stacktrace.png");
+  const editor = new Editor({} as TUI, {} as EditorTheme);
+  const store = new Map<string, string>();
+  const peek = new ImagePeek(store, editor as unknown as CustomEditor, attachSidebar(), loadFixture);
+  t.after(() => peek.dispose());
+  const pasted = "stack trace line\n".repeat(20);
+  editor.handleInput(`\x1b[200~${pasted}\x1b[201~`);
+  assert.match(editor.getText(), /^\[paste #/);
+  for (const char of ` ${filePath}`) editor.handleInput(char);
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  assert.equal(editor.getExpandedText(), `${pasted} ${filePath}`);
+
+  let submitted = "";
+  editor.onSubmit = (text) => { submitted = text; };
+  editor.handleInput("\r");
+  assert.equal(submitted, `${pasted} ${filePath}`);
+  assert.deepEqual(transformSubmittedText(submitted, store, loadFixture), {
+    text: `${pasted} [image-1]`, images: [loadFixture(filePath)],
+  });
+});
+
+test("history navigation keeps the draft and does not schedule a rewrite", async (t) => {
+  const filePath = image("history.png");
+  const editor = new Editor({} as TUI, {} as EditorTheme);
+  editor.addToHistory(`${filePath} please review`);
+  editor.setText("my unsent draft");
+  const peek = new ImagePeek(new Map(), editor as unknown as CustomEditor, attachSidebar(), loadFixture);
+  t.after(() => peek.dispose());
+  editor.handleInput("\x01");
+  editor.handleInput("\x1b[A");
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  assert.equal(editor.getText(), `${filePath} please review`);
+  editor.handleInput("\x05");
+  editor.handleInput("\x1b[B");
+  assert.equal(editor.getText(), "my unsent draft");
+});
+
+test("editing away from the end and navigating during a drop preserve the caret", async (t) => {
+  const filePath = image("caret.png");
+  const editor = new Editor({} as TUI, {} as EditorTheme);
+  editor.setText(`check ${filePath} tomorrow`);
+  const peek = new ImagePeek(new Map(), editor as unknown as CustomEditor, attachSidebar(), loadFixture);
+  t.after(() => peek.dispose());
+  editor.handleInput("\x01");
+  editor.handleInput("X");
+  peek.rewrite();
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  assert.equal(editor.getText(), `Xcheck ${filePath} tomorrow`);
+  assert.deepEqual(editor.getCursor(), { line: 0, col: 1 });
+
+  editor.setText("");
+  for (const char of filePath) editor.handleInput(char);
+  editor.handleInput("\x01");
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  assert.equal(editor.getText(), filePath);
+  assert.deepEqual(editor.getCursor(), { line: 0, col: 0 });
 });
 
 test("does not emit legacy rewrite notices during ordinary typing or navigation", async (t) => {

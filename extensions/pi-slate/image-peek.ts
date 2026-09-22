@@ -34,23 +34,36 @@ export class ImagePeek {
     this.originalHandleMouse = this.editor.handleMouse;
     this.originalHandleInput = this.editor.handleInput;
     this.editor.handleMouse = (event: TuiMouseEvent): TuiMouseEventResult | undefined => {
+      clearTimeout(this.rewriteTimer);
       const result = this.originalHandleMouse.call(this.editor, event);
       this.update();
       return result;
     };
     this.editor.handleInput = (data: string): void => {
+      const before = this.editor.getText();
       this.originalHandleInput.call(this.editor, data);
-      // ponytail: unbracketed Finder drops have no completion marker. A 50 ms
-      // quiet period avoids replacing filename prefixes during a normal burst;
-      // a deliberate pause after a complete path still counts as completion.
       clearTimeout(this.rewriteTimer);
-      this.rewriteTimer = setTimeout(() => this.rewrite(), 50);
+      // Only live-rewrite plain text appended at the end of the composer.
+      // Navigation, history recall and undo must not trigger a buffer reset.
+      if (data && !/[\x00-\x1f\x7f]/.test(data) && this.editor.getText() === before + data) {
+        // ponytail: unbracketed drops have no completion marker. A 50 ms quiet
+        // period avoids replacing prefixes during a burst, not a manual pause.
+        this.rewriteTimer = setTimeout(() => this.rewrite(), 50);
+      }
       this.update();
     };
   }
 
   rewrite(): void {
     const text = this.editor.getText();
+    const lines = text.split("\n");
+    const cursor = this.editor.getCursor();
+    // setText clears paste bodies and moves the cursor. In these cases leave
+    // raw paths intact: the input transform can attach them safely on submit.
+    if (this.editor.getExpandedText() !== text || cursor.line !== lines.length - 1 || cursor.col !== lines.at(-1)!.length) {
+      this.update();
+      return;
+    }
     const rewritten = rewriteClipboardPaths(text, nextImageNumber(text), this.store);
     if (rewritten !== text) this.editor.setText(rewritten);
     this.update();

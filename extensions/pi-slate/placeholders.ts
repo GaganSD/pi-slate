@@ -5,7 +5,7 @@ import { compactPath } from "./layout.ts";
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|webp|gif)$/i;
 // Match whole path tokens, not suffixes of URLs or prefixes of longer filenames.
 const EMBEDDED_IMAGE_PATH_RE =
-  /(?<![^\s([{"'`])(?:"((?:file:\/\/|\/|[A-Za-z]:\\)[^"]+\.(?:png|jpe?g|webp|gif))"|'((?:file:\/\/|\/|[A-Za-z]:\\)[^']+\.(?:png|jpe?g|webp|gif))'|`((?:file:\/\/|\/|[A-Za-z]:\\)[^`]+\.(?:png|jpe?g|webp|gif))`|((?:file:\/\/)?(?:\/|[A-Za-z]:\\)(?:\\ |[^\s"'`])+\.(?:png|jpe?g|webp|gif))(?=$|[\s"'`)\]},;]))/gi;
+  /(?<![^\s([{"'`])(?:"((?:file:\/\/|\/|[A-Za-z]:\\)[^"]+\.(?:png|jpe?g|webp|gif))"|'((?:file:\/\/|\/|[A-Za-z]:\\)[^']+\.(?:png|jpe?g|webp|gif))'|`((?:file:\/\/|\/|[A-Za-z]:\\)[^`]+\.(?:png|jpe?g|webp|gif))`|((?:file:\/\/)?(?:\/|[A-Za-z]:\\)(?:\\ |[^\s"'`])+\.(?:png|jpe?g|webp|gif))(?=$|[\s"'`)\]},;]|\.(?=\s|$)))/gi;
 
 export type ImageAttachment = {
   type: "image";
