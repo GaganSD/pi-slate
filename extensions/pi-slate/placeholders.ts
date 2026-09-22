@@ -1,7 +1,8 @@
 import { compactPath } from "./layout.ts";
 
-export const CLIPBOARD_PATH_RE =
-  /"?((?:\/|[A-Za-z]:\\)[^\s"'`]*[/\\]pi-clipboard-[0-9a-fA-F-]+\.(?:png|jpe?g|webp|gif))"?/g;
+const IMAGE_EXT_RE = /\.(?:png|jpe?g|webp|gif)$/i;
+const EMBEDDED_IMAGE_PATH_RE =
+  /"((?:\/|[A-Za-z]:\\)[^"]+\.(?:png|jpe?g|webp|gif))"|'((?:\/|[A-Za-z]:\\)[^']+\.(?:png|jpe?g|webp|gif))'|((?:file:\/\/)?(?:\/|[A-Za-z]:\\)[^\s"'`]+\.(?:png|jpe?g|webp|gif))/gi;
 
 export type ImageAttachment = {
   type: "image";
@@ -32,7 +33,7 @@ export function imageTokenAtCursor(
   for (const match of line.matchAll(/\[image[ -](\d+)\]/g)) {
     const start = match.index ?? 0;
     const end = start + match[0].length;
-    if (cursor.col >= start && cursor.col < end) return match[1];
+    if (cursor.col >= start && cursor.col <= end) return match[1];
   }
   return undefined;
 }
@@ -70,19 +71,57 @@ export function mimeTypeForImagePath(filePath: string): string {
   return "image/png";
 }
 
+function decodeImagePath(raw: string): string | undefined {
+  let value = raw.trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+    (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+  ) {
+    value = value.slice(1, -1);
+  }
+  if (value.startsWith("file://")) {
+    const rest = value.slice("file://".length);
+    try {
+      value = decodeURIComponent(rest);
+    } catch {
+      value = rest;
+    }
+    if (/^\/[A-Za-z]:[\\/]/.test(value)) value = value.slice(1);
+  }
+  value = value.replace(/\\ /g, " ");
+  if (!IMAGE_EXT_RE.test(value)) return undefined;
+  if (!value.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(value)) return undefined;
+  return value;
+}
+
+function assignImageToken(store: ImagePathStore, filePath: string, number: { value: number }): string {
+  const label = imageToken(number.value);
+  store.set(String(number.value), filePath);
+  number.value += 1;
+  return label;
+}
+
+function replaceEmbeddedImagePaths(
+  text: string,
+  replace: (full: string, filePath: string) => string,
+): string {
+  EMBEDDED_IMAGE_PATH_RE.lastIndex = 0;
+  return text.replace(EMBEDDED_IMAGE_PATH_RE, (full, doubleQuoted?: string, singleQuoted?: string, bare?: string) => {
+    const filePath = decodeImagePath(doubleQuoted ?? singleQuoted ?? bare ?? full);
+    if (!filePath) return full;
+    return replace(full, filePath);
+  });
+}
+
 export function rewriteClipboardPaths(
   text: string,
   startAt: number,
   store: ImagePathStore,
 ): string {
-  let number = startAt;
-  CLIPBOARD_PATH_RE.lastIndex = 0;
-  return text.replace(CLIPBOARD_PATH_RE, (_full, filePath: string) => {
-    const label = imageToken(number);
-    store.set(String(number), filePath);
-    number += 1;
-    return label;
-  });
+  const number = { value: startAt };
+  const dropped = decodeImagePath(text);
+  if (dropped) return assignImageToken(store, dropped, number);
+  return replaceEmbeddedImagePaths(text, (_full, filePath) => assignImageToken(store, filePath, number));
 }
 
 export function transformSubmittedText(
@@ -103,20 +142,19 @@ export function transformSubmittedText(
     seen.add(filePath);
   }
 
-  let number = nextImageNumber(text);
-  CLIPBOARD_PATH_RE.lastIndex = 0;
-  const nextText = text.replace(CLIPBOARD_PATH_RE, (full, filePath: string) => {
+  const number = { value: nextImageNumber(text) };
+  const attach = (full: string, filePath: string): string => {
     const existing = storedNumberForPath(store, filePath);
     if (existing && seen.has(filePath)) return imageToken(existing);
     const image = load(filePath);
     if (!image) return full;
-    const label = imageToken(number);
-    store.set(String(number), filePath);
+    const label = assignImageToken(store, filePath, number);
     images.push(image);
     seen.add(filePath);
-    number += 1;
     return label;
-  });
+  };
 
+  const dropped = decodeImagePath(text);
+  const nextText = dropped ? attach(text, dropped) : replaceEmbeddedImagePaths(text, attach);
   return { text: nextText, images };
 }

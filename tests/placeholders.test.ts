@@ -38,6 +38,19 @@ test("leaves ordinary pasted text alone", () => {
   assert.equal(store.size, 0);
 });
 
+test("rewrites a dropped image path to the next placeholder", () => {
+  const dropped = "/Users/gagan/Desktop/shot.png";
+  const spaced = "/Users/gagan/Desktop/Screenshot 2026-03-22 at 4.12.00 PM.png";
+  const store = new Map<string, string>();
+  assert.equal(rewriteClipboardPaths(dropped, 1, store), "[image-1]");
+  assert.equal(store.get("1"), dropped);
+  assert.equal(rewriteClipboardPaths(`'${spaced}'`, 2, store), "[image-2]");
+  assert.equal(store.get("2"), spaced);
+  assert.equal(rewriteClipboardPaths(`file://${dropped}`, 3, store), "[image-3]");
+  assert.equal(rewriteClipboardPaths("notes /tmp/diagram.webp extra", 4, store), "notes [image-4] extra");
+  assert.equal(store.get("4"), "/tmp/diagram.webp");
+});
+
 test("displays leftover clipboard paths as placeholders", () => {
   assert.equal(rewriteClipboardPaths(`look\n"${PATH}"`, 1, new Map()), "look\n[image-1]");
   assert.equal(rewriteClipboardPaths("already [image-1]", 2, new Map()), "already [image-1]");
@@ -45,14 +58,16 @@ test("displays leftover clipboard paths as placeholders", () => {
 
 test("attaches mapped images and rewrites leftover paths on submit", () => {
   const store = new Map<string, string>([["1", PATH]]);
+  const dropped = "/tmp/screenshot.jpg";
   const result = transformSubmittedText(
-    `compare [image-1] with ${PATH_2}`,
+    `compare [image-1] with ${PATH_2} and ${dropped}`,
     store,
     fakeImage,
   );
-  assert.equal(result.text, "compare [image-1] with [image-2]");
-  assert.deepEqual(result.images, [fakeImage(PATH), fakeImage(PATH_2)]);
+  assert.equal(result.text, "compare [image-1] with [image-2] and [image-3]");
+  assert.deepEqual(result.images, [fakeImage(PATH), fakeImage(PATH_2), fakeImage(dropped)]);
   assert.equal(store.get("2"), PATH_2);
+  assert.equal(store.get("3"), dropped);
 });
 
 test("formats clipboard image location details", () => {
@@ -75,7 +90,8 @@ test("finds the image token under the caret", () => {
   const text = "see [image-1] and [image-2]";
   assert.equal(imageTokenAtCursor(text, { line: 0, col: 4 }), "1");
   assert.equal(imageTokenAtCursor(text, { line: 0, col: 12 }), "1");
-  assert.equal(imageTokenAtCursor(text, { line: 0, col: 13 }), undefined);
+  assert.equal(imageTokenAtCursor(text, { line: 0, col: 13 }), "1");
+  assert.equal(imageTokenAtCursor(text, { line: 0, col: 14 }), undefined);
   assert.equal(imageTokenAtCursor(text, { line: 0, col: 18 }), "2");
   assert.equal(imageTokenAtCursor("look\n[image-3]", { line: 1, col: 0 }), "3");
   assert.equal(imageTokenAtCursor("look\n[image-3]", { line: 0, col: 1 }), undefined);
