@@ -4,7 +4,6 @@ import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui"
 import {
   imageTokenAtCursor,
   nextImageNumber,
-  noticeForInsert,
   rewriteClipboardPaths,
   type ImageAttachment,
   type ImagePathStore,
@@ -14,17 +13,24 @@ import type { Sidebar } from "./sidebar.ts";
 
 export class ImagePeek {
   private shownId?: string;
-  private inserts = 0;
+  private rewriteTimer?: ReturnType<typeof setTimeout>;
   private readonly originalHandleMouse: CustomEditor["handleMouse"];
   private readonly originalHandleInput: CustomEditor["handleInput"];
+  private readonly store: ImagePathStore;
+  private readonly editor: CustomEditor;
+  private readonly workspace: Sidebar;
+  private readonly loadImage: (filePath: string) => ImageAttachment | undefined;
 
   constructor(
-    private readonly store: ImagePathStore,
-    private readonly editor: CustomEditor,
-    private readonly workspace: Sidebar,
-    private readonly loadImage: (filePath: string) => ImageAttachment | undefined,
-    private readonly onNotice: (text: string) => void = () => {},
+    store: ImagePathStore,
+    editor: CustomEditor,
+    workspace: Sidebar,
+    loadImage: (filePath: string) => ImageAttachment | undefined,
   ) {
+    this.store = store;
+    this.editor = editor;
+    this.workspace = workspace;
+    this.loadImage = loadImage;
     this.originalHandleMouse = this.editor.handleMouse;
     this.originalHandleInput = this.editor.handleInput;
     this.editor.handleMouse = (event: TuiMouseEvent): TuiMouseEventResult | undefined => {
@@ -34,25 +40,23 @@ export class ImagePeek {
     };
     this.editor.handleInput = (data: string): void => {
       this.originalHandleInput.call(this.editor, data);
-      // Input arrives in chunks, so count the keystrokes inside each chunk
-      // rather than the chunk itself; pasted blocks are not typing.
-      const keys = data.startsWith("\x1b[200~")
-        ? 0
-        : data.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
-      const before = this.inserts;
-      this.inserts += keys;
-      // Flush a pending rewrite notice every few inserts so normalized paths
-      // stay discoverable without interrupting typing bursts.
-      const notice = noticeForInsert(this.inserts, before);
-      if (notice !== undefined) this.onNotice(notice);
+      // ponytail: unbracketed Finder drops have no completion marker. A 50 ms
+      // quiet period avoids replacing filename prefixes during a normal burst;
+      // a deliberate pause after a complete path still counts as completion.
+      clearTimeout(this.rewriteTimer);
+      this.rewriteTimer = setTimeout(() => this.rewrite(), 50);
       this.update();
     };
   }
 
-  update(): void {
+  rewrite(): void {
     const text = this.editor.getText();
     const rewritten = rewriteClipboardPaths(text, nextImageNumber(text), this.store);
     if (rewritten !== text) this.editor.setText(rewritten);
+    this.update();
+  }
+
+  update(): void {
     const number = imageTokenAtCursor(this.editor.getText(), this.editor.getCursor());
     const filePath = number ? this.store.get(number) : undefined;
     if (!number || !filePath) {
@@ -88,6 +92,7 @@ export class ImagePeek {
   }
 
   dispose(): void {
+    clearTimeout(this.rewriteTimer);
     this.editor.handleMouse = this.originalHandleMouse;
     this.editor.handleInput = this.originalHandleInput;
     this.hide();

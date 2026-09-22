@@ -228,7 +228,7 @@ class MinimalFooter implements Component {
 
 export default function piSlate(pi: ExtensionAPI): void {
   const sidebar = new Sidebar();
-  const images = installImagePlaceholders(pi, sidebar, (notice) => currentContext?.ui.notify(notice, "info"));
+  const images = installImagePlaceholders(pi, sidebar);
   let fileSnapshot = "";
   const files = new GitStatusPoller((changes) => {
     fileSnapshot = changes.map((file) => `${file.index}${file.worktree}:${file.path}:${file.origPath ?? ""}`).join("\0");
