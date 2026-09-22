@@ -1,7 +1,13 @@
 import { homedir } from "node:os";
 import type { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
-import { imageTokenAtCursor, type ImageAttachment, type ImagePathStore } from "./placeholders.ts";
+import {
+  imageTokenAtCursor,
+  nextImageNumber,
+  rewriteClipboardPaths,
+  type ImageAttachment,
+  type ImagePathStore,
+} from "./placeholders.ts";
 import { ImageWorkspaceView } from "./workspace.ts";
 import type { Sidebar } from "./sidebar.ts";
 
@@ -30,6 +36,9 @@ export class ImagePeek {
   }
 
   update(): void {
+    const text = this.editor.getText();
+    const rewritten = rewriteClipboardPaths(text, nextImageNumber(text), this.store);
+    if (rewritten !== text) this.editor.setText(rewritten);
     const number = imageTokenAtCursor(this.editor.getText(), this.editor.getCursor());
     const filePath = number ? this.store.get(number) : undefined;
     if (!number || !filePath) {

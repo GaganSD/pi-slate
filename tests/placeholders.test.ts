@@ -39,7 +39,7 @@ test("leaves ordinary pasted text alone", () => {
 });
 
 test("rewrites a dropped image path to the next placeholder", () => {
-  const dropped = "/Users/gagan/Desktop/shot.png";
+  const dropped = "/Users/gagandevagiri/Downloads/images/4cef6d34aa241a4e98b472556ff933db.jpg";
   const spaced = "/Users/gagan/Desktop/Screenshot 2026-03-22 at 4.12.00 PM.png";
   const store = new Map<string, string>();
   assert.equal(rewriteClipboardPaths(dropped, 1, store), "[image-1]");
