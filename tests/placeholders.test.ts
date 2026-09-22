@@ -5,6 +5,7 @@ import {
   imageTokenAtCursor,
   mimeTypeForImagePath,
   nextImageNumber,
+  noticeForInsert,
   rewriteClipboardPaths,
   transformSubmittedText,
   type ImageAttachment,
@@ -36,6 +37,57 @@ test("leaves ordinary pasted text alone", () => {
   const store = new Map<string, string>();
   assert.equal(rewriteClipboardPaths("hello", nextImageNumber(""), store), "hello");
   assert.equal(store.size, 0);
+});
+
+test("flushes a rewrite notice when the insert count crosses the interval", () => {
+  // Input arrives in chunks, so the count skips over exact multiples.
+  assert.equal(noticeForInsert(9, 8), undefined);
+  assert.notEqual(noticeForInsert(12, 8), undefined);
+  // One notice per interval crossed, not one per insert inside it.
+  assert.equal(noticeForInsert(13, 12), undefined);
+  assert.equal(noticeForInsert(19, 13), undefined);
+  assert.notEqual(noticeForInsert(21, 19), undefined);
+  // A fresh composer stays quiet until the first interval is reached.
+  assert.equal(noticeForInsert(0, 0), undefined);
+  assert.equal(noticeForInsert(4, 0), undefined);
+});
+
+test("cycles rewrite notices instead of repeating one", () => {
+  const first = noticeForInsert(10, 9);
+  const second = noticeForInsert(20, 19);
+  assert.ok(first !== undefined && second !== undefined);
+  assert.notEqual(first, second);
+  // Single-step callers keep the original cadence.
+  assert.equal(noticeForInsert(10), first);
+});
+
+test("previews percent-encoded clipboard paths", () => {
+  const store = new Map<string, string>();
+  assert.equal(rewriteClipboardPaths("/tmp/Screen%20Shot%202026-03-22.png", 1, store), "[image-1]");
+  assert.equal(store.get("1"), "/tmp/Screen Shot 2026-03-22.png");
+  assert.equal(rewriteClipboardPaths("file:///tmp/Screen%20Shot.png", 2, store), "[image-2]");
+  assert.equal(store.get("2"), "/tmp/Screen Shot.png");
+});
+
+test("keeps raw clipboard paths that only look percent-encoded", () => {
+  const store = new Map<string, string>();
+  assert.equal(rewriteClipboardPaths("/tmp/50%%20off.png", 3, store), "[image-3]");
+  assert.equal(store.get("3"), "/tmp/50%%20off.png");
+});
+
+test("previews screenshot paths with escaped spaces inside text", () => {
+  const store = new Map<string, string>();
+  const escaped =
+    "/Users/melange/Desktop/screenshots/Screenshot\\ 2026-09-08\\ at\\ 14.02.06.jpeg";
+  assert.equal(rewriteClipboardPaths(`see ${escaped} for the bug`, 1, store), "see [image-1] for the bug");
+  assert.equal(store.get("1"), "/Users/melange/Desktop/screenshots/Screenshot 2026-09-08 at 14.02.06.jpeg");
+});
+
+test("previews backtick-quoted clipboard paths", () => {
+  const store = new Map<string, string>();
+  const spaced = "/Users/melange/Desktop/screenshots/Screenshot 2026-09-08 at 14.02.06.jpeg";
+  assert.equal(rewriteClipboardPaths("paste `" + spaced + "` here", 1, store), "paste [image-1] here");
+  assert.equal(store.get("1"), spaced);
 });
 
 test("rewrites a dropped image path to the next placeholder", () => {

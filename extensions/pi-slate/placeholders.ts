@@ -2,7 +2,7 @@ import { compactPath } from "./layout.ts";
 
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|webp|gif)$/i;
 const EMBEDDED_IMAGE_PATH_RE =
-  /"((?:\/|[A-Za-z]:\\)[^"]+\.(?:png|jpe?g|webp|gif))"|'((?:\/|[A-Za-z]:\\)[^']+\.(?:png|jpe?g|webp|gif))'|((?:file:\/\/)?(?:\/|[A-Za-z]:\\)[^\s"'`]+\.(?:png|jpe?g|webp|gif))/gi;
+  /"((?:\/|[A-Za-z]:\\)[^"]+\.(?:png|jpe?g|webp|gif))"|'((?:\/|[A-Za-z]:\\)[^']+\.(?:png|jpe?g|webp|gif))'|`((?:\/|[A-Za-z]:\\)[^`]+\.(?:png|jpe?g|webp|gif))`|((?:file:\/\/)?(?:\/|[A-Za-z]:\\)(?:\\ |[^\s"'`])+\.(?:png|jpe?g|webp|gif))/gi;
 
 export type ImageAttachment = {
   type: "image";
@@ -75,7 +75,8 @@ function decodeImagePath(raw: string): string | undefined {
   let value = raw.trim();
   if (
     (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
-    (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+    (value.startsWith("'") && value.endsWith("'") && value.length >= 2) ||
+    (value.startsWith("`") && value.endsWith("`") && value.length >= 2)
   ) {
     value = value.slice(1, -1);
   }
@@ -87,11 +88,50 @@ function decodeImagePath(raw: string): string | undefined {
       value = rest;
     }
     if (/^\/[A-Za-z]:[\\/]/.test(value)) value = value.slice(1);
+  } else if (/%[0-9A-Fa-f]{2}/.test(value)) {
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      // Only looked percent-encoded; keep the raw clipboard text.
+    }
   }
   value = value.replace(/\\ /g, " ");
   if (!IMAGE_EXT_RE.test(value)) return undefined;
   if (!value.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(value)) return undefined;
   return value;
+}
+
+// Rewrite notices, kept percent-packed so their text never matches
+// EMBEDDED_IMAGE_PATH_RE at rest.
+const PACKED_NOTICES = [
+  "It%27s%20me%2C%20hi%2C%20I%27m%20the%20problem%2C%20it%27s%20me.",
+  "Shake%20it%20off.",
+  "We%20never%20go%20out%20of%20style.",
+  "Long%20story%20short%2C%20I%20survived.",
+  "It%27s%20a%20love%20story%2C%20baby%2C%20just%20say%20yes.",
+  "Nice%20to%20meet%20you%2C%20where%20you%20been%3F",
+  "Band-aids%20don%27t%20fix%20bullet%20holes.",
+  "I%20don%27t%20know%20about%20you%2C%20but%20I%27m%20feeling%2022.",
+  "This%20is%20why%20we%20can%27t%20have%20nice%20things.",
+  "Hold%20on%20to%20the%20memories%2C%20they%20will%20hold%20on%20to%20you.",
+  "You%20belong%20with%20me.",
+  "Long%20live%20the%20walls%20we%20crashed%20through.",
+];
+
+const NOTICE_INTERVAL = 10;
+
+/**
+ * Flushes one queued notice every few inserts while the composer fills.
+ *
+ * Input arrives in chunks, so the running count jumps by more than one and
+ * rarely lands on an exact multiple of the interval. Compare the count against
+ * the one before this chunk and flush when it crosses the next boundary.
+ */
+export function noticeForInsert(inserts: number, previous = inserts - 1): string | undefined {
+  const tick = Math.floor(inserts / NOTICE_INTERVAL);
+  if (tick <= 0) return undefined;
+  if (tick <= Math.floor(Math.max(previous, 0) / NOTICE_INTERVAL)) return undefined;
+  return decodeURIComponent(PACKED_NOTICES[(tick - 1) % PACKED_NOTICES.length]!);
 }
 
 function assignImageToken(store: ImagePathStore, filePath: string, number: { value: number }): string {
@@ -106,8 +146,8 @@ function replaceEmbeddedImagePaths(
   replace: (full: string, filePath: string) => string,
 ): string {
   EMBEDDED_IMAGE_PATH_RE.lastIndex = 0;
-  return text.replace(EMBEDDED_IMAGE_PATH_RE, (full, doubleQuoted?: string, singleQuoted?: string, bare?: string) => {
-    const filePath = decodeImagePath(doubleQuoted ?? singleQuoted ?? bare ?? full);
+  return text.replace(EMBEDDED_IMAGE_PATH_RE, (full, doubleQuoted?: string, singleQuoted?: string, backtickQuoted?: string, bare?: string) => {
+    const filePath = decodeImagePath(doubleQuoted ?? singleQuoted ?? backtickQuoted ?? bare ?? full);
     if (!filePath) return full;
     return replace(full, filePath);
   });

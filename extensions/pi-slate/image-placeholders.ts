@@ -36,7 +36,10 @@ function loadImage(filePath: string): ImageAttachment | undefined {
   };
 }
 
-function installEditorPatch(store: ImagePathStore, onInserted: () => void): () => void {
+function installEditorPatch(
+  store: ImagePathStore,
+  onInserted: () => void,
+): () => void {
   const proto = Editor.prototype as unknown as PatchableEditor;
   proto[ORIGINAL_INSERT] ??= proto.insertTextAtCursor;
   proto[ORIGINAL_PASTE] ??= proto.handlePaste;
@@ -66,7 +69,11 @@ function installEditorPatch(store: ImagePathStore, onInserted: () => void): () =
   };
 }
 
-export function installImagePlaceholders(pi: ExtensionAPI, workspace: Sidebar): ImagePlaceholders {
+export function installImagePlaceholders(
+  pi: ExtensionAPI,
+  workspace: Sidebar,
+  onNotice: (text: string) => void = () => {},
+): ImagePlaceholders {
   const store: ImagePathStore = new Map();
   let peek: ImagePeek | undefined;
   const uninstallEditorPatch = installEditorPatch(store, () => peek?.update());
@@ -92,7 +99,7 @@ export function installImagePlaceholders(pi: ExtensionAPI, workspace: Sidebar): 
   return {
     attachEditor(editor) {
       peek?.dispose();
-      peek = new ImagePeek(store, editor, workspace, loadImage);
+      peek = new ImagePeek(store, editor, workspace, loadImage, onNotice);
     },
     dispose() {
       peek?.dispose();
