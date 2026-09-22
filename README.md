@@ -1,8 +1,10 @@
-# pi-slate
+<h1 align="center">🍃 pi-slate</h1>
 
-A minimal terminal UI/UX for [Pi](https://pi.dev) with a customizable sidebar that keeps your work in view. 
+A minimal terminal UI/UX for [Pi](https://pi.dev) with a customizable sidebar that keeps your work in view.
 
-![Slate session with sidebar preview](assets/slate-overview.png)
+<p align="center">
+  <img src="assets/slate-overview.png" alt="Slate session with sidebar preview" />
+</p>
 
 ## Setup
 
@@ -10,12 +12,13 @@ A minimal terminal UI/UX for [Pi](https://pi.dev) with a customizable sidebar th
 
 ```
 - Save my pi-agent's tui and themes. Safely disable them for now.
-- Install pi-slate to my pi-agent using:  `pi install git:github.com/GaganSD/pi-slate`
-- Enable fullscreen mode. Slate replaces Pi's existing TUI resolve any conflicts. Ask me to /reload session once complete. 
-- For any existing replaced tui, list top 3 suggestions to integrate into pi-slate. 
+- Install pi-slate to my pi-agent using: `pi install git:github.com/GaganSD/pi-slate`
+- Enable fullscreen mode. Slate replaces Pi's existing TUI; resolve any conflicts. Ask me to /reload session once complete.
+- For any existing replaced tui, list top 3 suggestions to integrate into pi-slate.
 ```
 
-**Option 2: copy-paste this in your bash**
+**Option 2: Copy-paste this in your bash**
+
 ```bash
 pi install git:github.com/GaganSD/pi-slate
 pi --tui-mode fullscreen
@@ -29,7 +32,7 @@ Slate cleanly renders into your terminal and is easily customizable in your Pi. 
 
 ### Rich Media Rendering
 
-Slate uses Kitty Graphics Protocol to display rich media inside your terminal. 
+Slate uses Kitty Graphics Protocol to display rich media inside your terminal.
 
 > Usage: Caret-Peek over text to display. Click Preview to copy-path. Double-click to open/edit. Also supports Pi-generated clipboard image paths into `[image-N]` tokens.
 
@@ -39,7 +42,7 @@ Slate uses Kitty Graphics Protocol to display rich media inside your terminal.
 
 ### Interactive Observability
 
-Inspect work-tree files and recent request activity directly from the terminal. 
+Inspect work-tree files and recent request activity directly from the terminal.
 
 > Usage: Single-click to preview files or drill into activity categories, double-click to open files in your editor, and expand activity entries to inspect detailed tool executions.
 
@@ -47,12 +50,12 @@ Inspect work-tree files and recent request activity directly from the terminal.
   <img src="assets/slate-observability.png" alt="Sidebar files and last-turn activity" />
 </p>
 
-### **Session Context Overview**
+### Session Context Overview
 
-Slate keeps usage and spend visible at the bottom. Context usage may be estimated when provider usage is unavailable. Slate is fully deterministic and doesn't use your LLM. 
+Slate keeps usage and spend visible at the bottom. Context usage may be estimated when provider usage is unavailable. Slate is fully deterministic and doesn't use your LLM.
 
 <p align="center">
-  <img src="assets/slate-context.png" alt="Context usage, spend, skills, and MCP count" width="630" />
+  <img src="assets/slate-context.png" alt="Context usage, spend, skills, and MCP count" width="567" />
 </p>
 
 ## Commands
@@ -69,12 +72,13 @@ Slate keeps usage and spend visible at the bottom. Context usage may be estimate
 
 ## Minimal By Design
 
-Slate adds no context bloat; No tools, prompts, or model calls. It's entirely deterministic and made to be customizable and improve your Pi experience while your Pi remains yours.
+Slate adds no context bloat; no tools, prompts, or model calls. It's entirely deterministic and made to be customizable and improve your Pi experience while your Pi remains yours.
 
-## Requirements/limits
+## Requirements / Limits
+
 - Inline previews need Kitty or iTerm2 image-protocol support detected by Pi. Otherwise, previews fall back to text. Terminal multiplexers and proxies can affect detection.
 - **Other UI extensions:** Slate replaces Pi's header, footer, and editor. Extensions that replace the same surfaces may conflict.
-- File an issue for bug: [pi-slate](https://github.com/GaganSD/pi-slate/issues)
+- File an issue for a bug: [pi-slate](https://github.com/GaganSD/pi-slate/issues)
 
 ## License
 
