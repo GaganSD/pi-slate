@@ -11,10 +11,9 @@
 **Option 1: Pi-agent Prompt**
 
 ```
-- Save my pi-agent's tui and themes. Safely disable them for now.
-- Install pi-slate to my pi-agent using: `pi install npm:pi-slate`
-- Enable fullscreen mode. Slate replaces Pi's existing TUI; resolve any conflicts. Ask me to /reload session once complete.
-- For any existing replaced tui, list top 3 suggestions to integrate into pi-slate
+- Save my pi-agent's tui and themes and safely disable them for now.
+- Install pi-slate using: `pi install npm:pi-slate` and enable fullscreen mode.
+- Slate replaces Pi's existing TUI; resolve any conflicts. Ask me to /reload session once complete.
 ```
 
 **Option 2: Bash**
