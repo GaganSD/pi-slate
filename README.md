@@ -35,37 +35,20 @@ Slate uses Kitty Graphics Protocol to display rich media inside your terminal. C
   <img src="assets/slate-media.png" alt="Chat with [image-N] tokens and the sidebar image preview" />
 </p>
 
-### Observability
+## Interactive Observability
 
-<table>
-<tr>
-<td width="50%" valign="top">
+Inspect work-tree files and recent request activity directly from the terminal. Single-click to preview files or drill into activity categories, double-click to open files in your editor, and expand activity entries to inspect detailed tool executions.
 
-**1. Get Work-tree observability.** Click to Preview in terminal. Double-Click to Open in editor. Use the mouse wheel to scroll.
-
-</td>
-<td width="50%" valign="top">
-
-**2. Last-Turn Observability.** Tracks activity for the latest user request. Click a count or category to inspect its activity, then click an activity title in Preview to expand or collapse the tool details. Use **[clear]** to dismiss the selected preview.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<img src="assets/slate-files.png" alt="Changed files in the sidebar" width="100%" />
-</td>
-<td width="50%" valign="top">
-<img src="assets/slate-activity.png" alt="Last-turn activity in Preview" width="100%" />
-</td>
-</tr>
-</table>
+<p align="center">
+  <img src="assets/slate-observability.png" alt="Sidebar files and last-turn activity" />
+</p>
 
 ## **Session Context Overview**
 
 - keeps usage and spend visible at the bottom. Context usage may be estimated when provider usage is unavailable.
 
 <p align="center">
-  <img src="assets/slate-context.png" alt="Context usage, spend, skills, and MCP count" width="900" />
+  <img src="assets/slate-context.png" alt="Context usage, spend, skills, and MCP count" width="630" />
 </p>
 
 ## Commands
