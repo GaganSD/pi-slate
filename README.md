@@ -1,8 +1,8 @@
-<h1 align="center">🍃 pi-slate</h1>
-
-A minimal terminal UI/UX for [Pi](https://pi.dev) with a customizable sidebar that keeps your work in view.
+<h1 align="center">Slate 🌱</h1>
 
 <p align="center">
+  A minimal terminal UI/UX for Pi Coding Agent with a customizable sidebar that keeps your work in view.
+  <div style="height: 20px;"></div>
   <img src="assets/slate-overview.png" alt="Slate session with sidebar preview" />
 </p>
 
@@ -74,10 +74,9 @@ Slate keeps usage and spend visible at the bottom. Context usage may be estimate
 
 Slate adds no context bloat; no tools, prompts, or model calls. It's entirely deterministic and made to be customizable and improve your Pi experience while your Pi remains yours.
 
-## Requirements / Limits
-
-- Inline previews need Kitty or iTerm2 image-protocol support detected by Pi. Otherwise, previews fall back to text. Terminal multiplexers and proxies can affect detection.
-- **Other UI extensions:** Slate replaces Pi's header, footer, and editor. Extensions that replace the same surfaces may conflict.
+## Requirements
+- Pi Coding Agent and a Modern Terminal that can render Kitty or iTerm2 image-protocol. (Ghostty, Warp, etc.)
+- Disable other UI extensions or ask your agent to merge them. Slate replaces Pi's header, footer, and editor. Extensions that replace the same surfaces may conflict.
 - File an issue for a bug: [pi-slate](https://github.com/GaganSD/pi-slate/issues)
 
 ## License
