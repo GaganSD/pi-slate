@@ -30,26 +30,44 @@ Slate cleanly renders into your terminal and is easily customizable in your pi. 
 ### Rich Media Display In Your Terminal
 
 Slate uses Kitty Graphics Protocol to display rich media inside your terminal. Caret-Peek over text to display. Click Preview to copy-path. Double-click to open/edit. Also supports Pi-generated clipboard image paths into `[image-N]` tokens.
-[image of adding text & image in chat. then show right side]
 
+<p align="center">
+  <img src="assets/slate-media.png" alt="Chat with [image-N] tokens and the sidebar image preview" />
+</p>
 
-### Observability 
+### Observability
+
 1. **Get Work-tree observability**. Click to Preview in terminal. Double-Click to Open in editor. Use the mouse wheel to scroll.
+
+<p align="center">
+  <img src="assets/slate-files.png" alt="Sidebar files changed and last-turn activity" width="360" />
+</p>
 
 2. **Last-Turn Observability.** Tracks activity for the latest user request. Click a count or category to inspect its activity, then click an activity title in Preview to expand or collapse the tool details. Use **[clear]** to dismiss the selected preview.
 
-## **Session Context Overview** 
+<p align="center">
+  <img src="assets/slate-activity.png" alt="Last-turn activity list in Preview" width="420" />
+</p>
+
+## **Session Context Overview**
 
 - keeps usage and spend visible at the bottom. Context usage may be estimated when provider usage is unavailable.
 
-<!-- Proposed asset: assets/slate-preview.gif — a short real-session loop: click a changed text file, scroll its diff, then select Last Turn activity and expand one tool detail. Keep Summary and Context visible; provide a static fallback when adding the asset. -->
+<p align="center">
+  <img src="assets/slate-context.png" alt="Context usage, spend, skills, and MCP count" />
+</p>
 
 ## Commands
 
-TODO For Pi: List all commands and write a simple 1 liner about their effect in settings. Sorted by 'usefulness'. 
+`/slate` with no args opens the same settings picker.
 
 | Setting | Commands | Effect |
 | --- | --- | --- |
+| Sidebar width | `/slate width [default\|narrow\|medium\|wide\|<percent>]` | How wide the sidebar is. `default` is 20%. |
+| Message length | `/slate message-length [default\|all\|<count>]` | How many chat messages stay on screen. `default` is 100. |
+| Density | `/slate density [comfortable\|compact]` | Comfortable pads the editor; compact does not. |
+| Footer | `/slate footer [standard\|minimal]` | Standard shows model and thinking when there is room; minimal hides them. |
+| Bugs | `/slate bug [file\|open]` | File a GitHub issue, or open the tracker. |
 
 ## Minimal by design
 
