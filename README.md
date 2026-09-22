@@ -34,7 +34,7 @@ Slate cleanly renders into your terminal and is easily customizable in your Pi. 
 
 Slate uses Kitty Graphics Protocol to display rich media inside your terminal.
 
-> Usage: Caret-Peek over text to display. Click Preview to copy-path. Double-click to open/edit. Also supports Pi-generated clipboard image paths into `[image-N]` tokens.
+> Usage: Caret-Peek over text to display. Click Preview to copy-path. Double-click to open/edit. Also supports Pi-generated clipboard image paths into `[image-N]` tokens. Sent `[image-N]` tokens keep their file path as a clickable link that opens the image, and token numbering continues across messages so every token stays unique.
 
 <p align="center">
   <img src="assets/slate-media.png" alt="Chat with [image-N] tokens and the sidebar image preview" />

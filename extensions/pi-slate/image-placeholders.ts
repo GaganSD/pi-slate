@@ -5,6 +5,7 @@ import { ImagePeek } from "./image-peek.ts";
 import {
   mimeTypeForImagePath,
   nextImageNumber,
+  renderStoredImageTokens,
   rewriteClipboardPaths,
   transformSubmittedText,
   type ImageAttachment,
@@ -43,12 +44,12 @@ function installEditorPatch(store: ImagePathStore, onInserted: () => void): () =
   const originalInsert = proto[ORIGINAL_INSERT];
   const originalPaste = proto[ORIGINAL_PASTE];
   function insertPatch(this: Editor, text: string) {
-    const result = originalInsert.call(this, rewriteClipboardPaths(text, nextImageNumber(this.getText()), store));
+    const result = originalInsert.call(this, rewriteClipboardPaths(text, nextImageNumber(this.getText(), store), store));
     onInserted();
     return result;
   }
   function pastePatch(this: Editor, text: string) {
-    originalPaste.call(this, rewriteClipboardPaths(text, nextImageNumber(this.getText()), store));
+    originalPaste.call(this, rewriteClipboardPaths(text, nextImageNumber(this.getText(), store), store));
     onInserted();
   }
   proto.insertTextAtCursor = insertPatch;
@@ -72,7 +73,7 @@ export function installImagePlaceholders(pi: ExtensionAPI, workspace: Sidebar): 
 
   pi.registerMarkdownTransformer((markdown, { messageType }) => {
     if (messageType !== "user") return markdown;
-    return rewriteClipboardPaths(markdown, nextImageNumber(markdown), new Map());
+    return renderStoredImageTokens(markdown, store);
   });
 
   pi.on("input", async (event) => {

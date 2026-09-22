@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   formatImageLocation,
+  imageFileUrl,
+  imageLinkMarkdown,
   imageTokenAtCursor,
   mimeTypeForImagePath,
   nextImageNumber,
+  renderStoredImageTokens,
   rewriteClipboardPaths,
   transformSubmittedText,
   type ImageAttachment,
@@ -91,4 +94,56 @@ test("skips missing files without dropping the path", () => {
   const leftover = transformSubmittedText(PATH, new Map(), () => undefined);
   assert.equal(leftover.text, PATH);
   assert.deepEqual(leftover.images, []);
+});
+
+test("nextImageNumber continues from the session store", () => {
+  const store = new Map<string, string>([["4", PATH]]);
+  assert.equal(nextImageNumber("", store), 5);
+  assert.equal(nextImageNumber("see [image-2]", store), 5);
+  assert.equal(nextImageNumber("see [image-9]", store), 10);
+});
+
+test("submitted tokens keep counting across messages", () => {
+  const store = new Map<string, string>([["1", PATH]]);
+  const first = transformSubmittedText(`look at this`, store, fakeImage);
+  assert.equal(first.text, "look at this");
+
+  const second = transformSubmittedText(`and ${PATH_2}`, store, fakeImage);
+  assert.equal(second.text, `and [image-2]`);
+});
+
+test("renderStoredImageTokens upgrades stored tokens to file links", () => {
+  const store = new Map<string, string>([["1", PATH]]);
+  const rendered = renderStoredImageTokens("check [image-1] please", store);
+  assert.equal(rendered, `check [image-1](${imageFileUrl(PATH)}) please`);
+});
+
+test("renderStoredImageTokens leaves unknown tokens alone", () => {
+  assert.equal(renderStoredImageTokens("check [image-1] please", new Map()), "check [image-1] please");
+});
+
+test("renderStoredImageTokens links bare clipboard paths and reuses stored numbers", () => {
+  const store = new Map<string, string>([["1", PATH]]);
+  const rendered = renderStoredImageTokens(`see ${PATH} and ${PATH_2}`, store);
+  assert.equal(rendered, `see [image-1](${imageFileUrl(PATH)}) and [image-2](${imageFileUrl(PATH_2)})`);
+});
+
+test("renderStoredImageTokens is idempotent across renders", () => {
+  const store = new Map<string, string>([["1", PATH]]);
+  const once = renderStoredImageTokens(`see ${PATH}`, store);
+  assert.equal(renderStoredImageTokens(once, store), once);
+});
+
+test("renderStoredImageTokens escapes spaces in file paths", () => {
+  const spaced = "/tmp/my screenshots/pi-clipboard-f2634509-b0a8-489a-85f7-ce9dc69b976a.png";
+  const store = new Map<string, string>([["1", spaced]]);
+  const rendered = renderStoredImageTokens("[image-1]", store);
+  assert.equal(rendered, `[image-1](${imageFileUrl(spaced)})`);
+  assert.ok(!rendered.includes(" "));
+});
+
+test("pasted transcript links are not rewritten inside their file url", () => {
+  const store = new Map<string, string>();
+  const link = `[image-1](${imageFileUrl(PATH)})`;
+  assert.equal(rewriteClipboardPaths(`compare ${link}`, nextImageNumber("", store), store), `compare ${link}`);
 });

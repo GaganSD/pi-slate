@@ -1,7 +1,8 @@
+import { pathToFileURL } from "node:url";
 import { compactPath } from "./layout.ts";
 
 export const CLIPBOARD_PATH_RE =
-  /"?((?:\/|[A-Za-z]:\\)[^\s"'`]*[/\\]pi-clipboard-[0-9a-fA-F-]+\.(?:png|jpe?g|webp|gif))"?/g;
+  /(?<!\S)"?((?:\/|[A-Za-z]:\\)[^\s"'`]*[/\\]pi-clipboard-[0-9a-fA-F-]+\.(?:png|jpe?g|webp|gif))"?/g;
 
 export type ImageAttachment = {
   type: "image";
@@ -15,10 +16,24 @@ function imageToken(number: number | string): string {
   return `[image-${number}]`;
 }
 
-export function nextImageNumber(text: string): number {
+export function imageFileUrl(filePath: string): string {
+  return pathToFileURL(filePath).href;
+}
+
+export function imageLinkMarkdown(number: number | string, filePath: string): string {
+  return `${imageToken(number)}(${imageFileUrl(filePath)})`;
+}
+
+export function nextImageNumber(text: string, store?: ImagePathStore): number {
   let max = 0;
   for (const match of text.matchAll(/\[image[ -](\d+)\]/g)) {
     max = Math.max(max, Number(match[1]));
+  }
+  if (store) {
+    for (const number of store.keys()) {
+      const parsed = Number(number);
+      if (Number.isFinite(parsed)) max = Math.max(max, parsed);
+    }
   }
   return max + 1;
 }
@@ -85,6 +100,37 @@ export function rewriteClipboardPaths(
   });
 }
 
+/**
+ * Render image tokens for display in the transcript.
+ *
+ * Plain `[image-N]` tokens with a known path in the store, and bare clipboard
+ * paths, are rewritten as markdown links so the file path survives in the
+ * rendered message. The visible link text stays `[image-N]`, and the terminal
+ * renders it as a clickable hyperlink that opens the image. Idempotent: tokens
+ * already in link form and paths already inside `file://` URLs are left
+ * untouched, so repeated renders are stable.
+ */
+export function renderStoredImageTokens(markdown: string, store: ImagePathStore): string {
+  const plainToken = /\[image[ -](\d+)\](?!\()/g;
+  const withTokens = markdown.replace(plainToken, (full, number: string) => {
+    const filePath = store.get(number);
+    return filePath ? imageLinkMarkdown(number, filePath) : full;
+  });
+
+  let number = nextImageNumber(withTokens, store);
+  const assigned = new Map<string, string>();
+  CLIPBOARD_PATH_RE.lastIndex = 0;
+  return withTokens.replace(CLIPBOARD_PATH_RE, (_full, filePath: string) => {
+    let label = storedNumberForPath(store, filePath) ?? assigned.get(filePath);
+    if (label === undefined) {
+      label = String(number);
+      number += 1;
+    }
+    assigned.set(filePath, label);
+    return imageLinkMarkdown(label, filePath);
+  });
+}
+
 export function transformSubmittedText(
   text: string,
   store: ImagePathStore,
@@ -103,7 +149,7 @@ export function transformSubmittedText(
     seen.add(filePath);
   }
 
-  let number = nextImageNumber(text);
+  let number = nextImageNumber(text, store);
   CLIPBOARD_PATH_RE.lastIndex = 0;
   const nextText = text.replace(CLIPBOARD_PATH_RE, (full, filePath: string) => {
     const existing = storedNumberForPath(store, filePath);
