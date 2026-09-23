@@ -11,13 +11,13 @@ import {
   formatContextResources,
   formatContextTokens,
   formatInteger,
-  formatMcpConnected,
+  formatMcpEnabled,
   formatPercent,
   formatSkillsLoaded,
   formatSpend,
   formatTokenCount,
   formatTokenRate,
-  parseMcpConnectedCount,
+  parseMcpEnabledCount,
   mainColumnWidth,
   maxSidebarWidth,
   modelLabel,
@@ -200,22 +200,40 @@ test("sidebar rows pin the footer dock and give the rest to content", () => {
 });
 
 test("MCP and skill counts share the Context resource line", () => {
-  assert.equal(formatMcpConnected(0), "0 MCPs connected");
-  assert.equal(formatMcpConnected(1), "1 MCPs connected");
-  assert.equal(formatMcpConnected(2), "2 MCPs connected");
+  assert.equal(formatMcpEnabled(0), "0 MCPs enabled");
+  assert.equal(formatMcpEnabled(1), "1 MCPs enabled");
+  assert.equal(formatMcpEnabled(2), "2 MCPs enabled");
   assert.equal(formatSkillsLoaded(0), "0 skills loaded");
   assert.equal(formatSkillsLoaded(3), "3 skills loaded");
-  assert.equal(formatContextResources(1.234, 3, 2), "$1.23 · 3 skills loaded · 2 MCPs connected");
-  assert.equal(formatContextResources(null, 0, null), "$0.00 · 0 skills loaded · 0 MCPs connected");
+  assert.equal(formatContextResources(1.234, 3, 2), "$1.23 · 3 skills loaded · 2 MCPs enabled");
+  assert.equal(formatContextResources(null, 0, null), "$0.00 · 0 skills loaded · 0 MCPs enabled");
   assert.equal(countSkillCommands([
     { source: "skill", sourceInfo: { path: "/skills/a/SKILL.md" }, name: "a" },
     { source: "skill", sourceInfo: { path: "/skills/a/SKILL.md" }, name: "a:1" },
     { source: "extension", sourceInfo: { path: "/ext.ts" }, name: "slate" },
   ]), 1);
-  assert.equal(parseMcpConnectedCount({ connectedCount: 2 }), 2);
-  assert.equal(parseMcpConnectedCount({ connectedCount: -1 }), 0);
-  assert.equal(parseMcpConnectedCount({}), null);
-  assert.equal(parseMcpConnectedCount(null), null);
+  assert.equal(parseMcpEnabledCount({
+    connectedCount: 2,
+    servers: [{ name: "a" }, { name: "b" }],
+  }), 2);
+  assert.equal(parseMcpEnabledCount({}), null);
+  assert.equal(parseMcpEnabledCount(null), null);
+});
+
+test("MCP enabled count includes cached servers and ignores live connection count", () => {
+  assert.equal(parseMcpEnabledCount({
+    connectedCount: 0,
+    disabledCount: 1,
+    servers: [
+      { name: "linear", status: "cached", disabled: false },
+      { name: "github", status: "disabled", disabled: true },
+    ],
+  }), 1);
+  assert.equal(parseMcpEnabledCount({
+    connectedCount: 0,
+    servers: [{ name: "linear", status: "cached" }],
+  }), 1);
+  assert.equal(parseMcpEnabledCount({ connectedCount: 2 }), null);
 });
 
 test("files widget stays compact and never exceeds five lines", () => {

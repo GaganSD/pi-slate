@@ -38,7 +38,7 @@ import {
   footerVisibility,
   mainColumnWidth,
   modelLabel,
-  parseMcpConnectedCount,
+  parseMcpEnabledCount,
   parseMessageLength,
   parseMessageLengthArg,
   parseSidebarPercent,
@@ -282,7 +282,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   };
 
   pi.events.on(MCP_STATUS_EVENT, (data) => {
-    sidebar.setMcpConnected(parseMcpConnectedCount(data));
+    sidebar.setMcpConnected(parseMcpEnabledCount(data));
   });
   pi.events.on("subagent:async-complete", refreshFiles);
   pi.on("resources_discover", () => {
