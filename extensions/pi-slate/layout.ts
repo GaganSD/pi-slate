@@ -66,9 +66,9 @@ export function formatContextTokens(
 
 export const MCP_STATUS_EVENT = "pi-mcp-adapter/status/v1";
 
-export function formatMcpConnected(count: number): string {
+export function formatMcpEnabled(count: number): string {
   const servers = Math.max(0, Math.round(count));
-  return `${servers} MCPs connected`;
+  return `${servers} MCPs enabled`;
 }
 
 export function formatSkillsLoaded(count: number): string {
@@ -81,7 +81,7 @@ export function formatContextResources(
   skills: number,
   mcpCount: number | null,
 ): string {
-  return `${formatSpend(spend)} · ${formatSkillsLoaded(skills)} · ${formatMcpConnected(mcpCount ?? 0)}`;
+  return `${formatSpend(spend)} · ${formatSkillsLoaded(skills)} · ${formatMcpEnabled(mcpCount ?? 0)}`;
 }
 
 export function countSkillCommands(commands: readonly { source?: string; sourceInfo?: { path?: string }; name?: string }[]): number {
@@ -93,11 +93,15 @@ export function countSkillCommands(commands: readonly { source?: string; sourceI
   return seen.size;
 }
 
-export function parseMcpConnectedCount(data: unknown): number | null {
+export function parseMcpEnabledCount(data: unknown): number | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
-  const count = (data as { connectedCount?: unknown }).connectedCount;
-  if (typeof count !== "number" || !Number.isFinite(count)) return null;
-  return Math.max(0, Math.round(count));
+  const servers = (data as { servers?: unknown }).servers;
+  if (!Array.isArray(servers)) return null;
+  return servers.filter(isEnabledMcpServer).length;
+}
+
+function isEnabledMcpServer(server: unknown): boolean {
+  return !!server && typeof server === "object" && !Array.isArray(server) && (server as { disabled?: unknown }).disabled !== true;
 }
 
 export function footerVisibility(width: number): {
