@@ -386,6 +386,8 @@ export default function piSlate(pi: ExtensionAPI): void {
       return new MinimalFooter(tui, theme, footerData, getContext, () => config, columnWidth);
     });
     ctx.ui.setEditorComponent((tui: TUI, editorTheme: EditorTheme, keybindings: KeybindingsManager) => {
+      images.detachEditor();
+      selection.dispose();
       const minimalEditorTheme: EditorTheme = {
         ...editorTheme,
         borderColor: (text) => ctx.ui.theme.fg("borderMuted", text),
@@ -396,13 +398,12 @@ export default function piSlate(pi: ExtensionAPI): void {
         embedWorkingStatus: true,
       });
       selection.attach(activeEditor, {
-        copy: (text) => {
-          void copyToClipboard(text).then(
-            () => {},
-            () => ctx.ui.notify("Could not copy", "error"),
-          );
-        },
+        copy: (text) => copyToClipboard(text),
+        requestRender: () => tui.requestRender(),
+        onCopyError: () => ctx.ui.notify("Could not copy", "error"),
         imagePath: (number) => images.pathFor(number),
+        matchesImage: (number, path) => images.matchesImage(number, path),
+        onTokenExpansion: () => images.refreshEditor(),
       });
       images.attachEditor(activeEditor);
       return activeEditor;
