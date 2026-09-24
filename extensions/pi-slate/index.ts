@@ -19,6 +19,7 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 import { installImagePlaceholders } from "./image-placeholders.ts";
+import { ComposerSelectionController } from "./composer-selection.ts";
 import { GitStatusPoller } from "./git-status.ts";
 import { fileKey, formatFileLabel } from "./files-modified.ts";
 import { GitDiffPreviewLoader } from "./git-diff.ts";
@@ -229,6 +230,7 @@ class MinimalFooter implements Component {
 export default function piSlate(pi: ExtensionAPI): void {
   const sidebar = new Sidebar();
   const images = installImagePlaceholders(pi, sidebar);
+  const selection = new ComposerSelectionController();
   let fileSnapshot = "";
   const files = new GitStatusPoller((changes) => {
     fileSnapshot = changes.map((file) => `${file.index}${file.worktree}:${file.path}:${file.origPath ?? ""}`).join("\0");
@@ -393,6 +395,14 @@ export default function piSlate(pi: ExtensionAPI): void {
         autocompleteMaxVisible: 8,
         embedWorkingStatus: true,
       });
+      selection.attach(activeEditor, {
+        copy: (text) => {
+          void copyToClipboard(text).then(
+            () => {},
+            () => ctx.ui.notify("Could not copy", "error"),
+          );
+        },
+      });
       images.attachEditor(activeEditor);
       return activeEditor;
     });
@@ -479,6 +489,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   pi.on("session_shutdown", (_event, ctx) => {
     tokenRate.dispose();
     images.dispose();
+    selection.dispose();
     files.dispose();
     diffs.clear();
     messageWindow?.dispose();

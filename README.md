@@ -57,6 +57,17 @@ Slate keeps usage and spend visible at the bottom. Context usage may be estimate
   <img src="assets/slate-context.png" alt="Context usage, spend, skills, and MCP count" width="567" />
 </p>
 
+## Composer Keys
+
+Cmd+A or Ctrl+Shift+A selects all prompt text. Cmd+C or Ctrl+C copies it; Backspace or typing replaces it. Press Esc twice to clear the prompt.
+
+Ghostty users can send the Kitty key sequences Slate recognizes with:
+
+```ini
+keybind = super+a=csi:97;9u
+keybind = super+c=csi:99;9u
+```
+
 ## Commands
 
 `/slate` with no args opens the same settings picker.
