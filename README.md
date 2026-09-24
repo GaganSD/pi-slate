@@ -59,14 +59,27 @@ Slate keeps usage and spend visible at the bottom. Context usage may be estimate
 
 ## Composer Keys
 
-Cmd+A or Ctrl+Shift+A selects all prompt text. Cmd+C or Ctrl+C copies it; Backspace or typing replaces it. Press Esc twice to clear the prompt.
+Slate owns the prompt, not the whole terminal.
 
-Ghostty users can send the Kitty key sequences Slate recognizes with:
+| Action | Keys |
+| --- | --- |
+| Select all prompt text | `Cmd+A` / `Ctrl+Shift+A` |
+| Copy selected prompt | `Cmd+C` / `Ctrl+C` |
+| Replace selection | Type, Backspace, or paste |
+| Submit selected prompt | `Enter` (does not erase it first) |
+| Clear the prompt | `Esc` `Esc` |
+| Expand a collapsed paste or `[image-N]` | `Cmd+V` / paste again while the cursor is on the token |
+
+Large pastes stay collapsed as `[paste #1 +18 lines]`. Image paths stay as `[image-1]`. A second paste on that token expands it in place so you can edit the full text or path.
+
+Ghostty keeps `Cmd+A` / `Cmd+C` for the terminal unless you forward them:
 
 ```ini
 keybind = super+a=csi:97;9u
 keybind = super+c=csi:99;9u
 ```
+
+Reload Ghostty (`Cmd+Shift+,`) then `/reload` in Pi. `Ctrl+Shift+A` works without that.
 
 ## Commands
 

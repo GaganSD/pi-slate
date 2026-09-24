@@ -11,7 +11,9 @@ class FakeEditor implements ComposerSelectionEditor {
   expandedText?: string;
   setTextCalls: string[] = [];
   inputCalls: string[] = [];
+  pasteCalls: string[] = [];
   mouseCalls = 0;
+  cursor?: { line: number; col: number };
   renderedLines = ["TOP", "prompt", "BOTTOM"];
   autocomplete = false;
   onInput?: (data: string, editor: FakeEditor) => void;
@@ -34,8 +36,13 @@ class FakeEditor implements ComposerSelectionEditor {
   }
 
   getCursor(): { line: number; col: number } {
-    return { line: 0, col: this.text.length };
+    return this.cursor ?? { line: 0, col: this.text.length };
   }
+
+  handlePaste = (text: string): void => {
+    this.pasteCalls.push(text);
+    this.text += text;
+  };
 
   handleInput = (data: string): void => {
     this.inputCalls.push(data);
@@ -62,9 +69,10 @@ function attach(
   editor: FakeEditor,
   copy: (text: string) => void = () => {},
   now: () => number = Date.now,
+  imagePath?: (number: string) => string | undefined,
 ): ComposerSelectionController {
   const selection = new ComposerSelectionController(now);
-  selection.attach(editor, { copy });
+  selection.attach(editor, { copy, imagePath });
   return selection;
 }
 
@@ -266,6 +274,40 @@ test("dispose restores only wrappers installed by the selection controller", () 
   assert.equal(editor.render, laterRender);
 });
 
+test("a second paste on a collapsed paste marker expands it", () => {
+  const editor = new FakeEditor("[paste #1 +18 lines]");
+  editor.expandedText = "line\n".repeat(18).trimEnd();
+  attach(editor);
+
+  editor.handlePaste("line\n".repeat(18));
+
+  assert.equal(editor.getText(), editor.expandedText);
+  assert.deepEqual(editor.pasteCalls, []);
+});
+
+test("Cmd+V on an image token expands the stored path", () => {
+  const editor = new FakeEditor("see [image-1]");
+  editor.cursor = { line: 0, col: 13 };
+  attach(editor, () => {}, Date.now, (number) => number === "1" ? "/tmp/shot.png" : undefined);
+
+  editor.handleInput("\x1b[118;9u");
+
+  assert.equal(editor.getText(), "see /tmp/shot.png");
+  assert.deepEqual(editor.inputCalls, []);
+});
+
+test("paste away from a collapsed token still inserts", () => {
+  const editor = new FakeEditor("hello [paste #1 +18 lines]");
+  editor.expandedText = "hello hidden paste body";
+  editor.cursor = { line: 0, col: 1 };
+  attach(editor);
+
+  editor.handlePaste("more");
+
+  assert.deepEqual(editor.pasteCalls, ["more"]);
+  assert.equal(editor.getText(), "hello [paste #1 +18 lines]more");
+});
+
 test("select-all then Enter submits the prompt instead of erasing it", () => {
   const submitted: string[] = [];
   const editor = new Editor({
@@ -279,5 +321,20 @@ test("select-all then Enter submits the prompt instead of erasing it", () => {
   editor.handleInput(SELECT_ALL);
   editor.handleInput("\r");
   assert.deepEqual(submitted, ["keep this prompt"]);
+  selection.dispose();
+});
+
+test("a second large paste on the real editor expands the collapse marker", () => {
+  const editor = new Editor({
+    terminal: { rows: 24, columns: 80 },
+    requestRender() {},
+  } as TUI, { borderColor: (text) => text } as EditorTheme);
+  const selection = new ComposerSelectionController();
+  selection.attach(editor, { copy() {} });
+  const pasted = Array.from({ length: 18 }, (_, index) => `line ${index + 1}`).join("\n");
+  editor.handleInput(`\x1b[200~${pasted}\x1b[201~`);
+  assert.match(editor.getText(), /\[paste #1 \+18 lines\]/);
+  editor.handleInput(`\x1b[200~${pasted}\x1b[201~`);
+  assert.equal(editor.getText(), pasted);
   selection.dispose();
 });

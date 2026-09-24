@@ -18,15 +18,22 @@ export type ComposerSelectionEditor = {
 export type ComposerSelectionOptions = {
   copy(text: string): void;
   onCopyError?(error: unknown): void;
+  imagePath?(number: string): string | undefined;
+};
+
+type PasteableEditor = ComposerSelectionEditor & {
+  handlePaste?(text: string): void;
 };
 
 type InstalledEditor = {
-  editor: ComposerSelectionEditor;
+  editor: PasteableEditor;
   originalHandleInput: ComposerSelectionEditor["handleInput"];
   originalHandleMouse: ComposerSelectionEditor["handleMouse"];
+  originalHandlePaste?: PasteableEditor["handlePaste"];
   originalRender: ComposerSelectionEditor["render"];
   handleInput: ComposerSelectionEditor["handleInput"];
   handleMouse: ComposerSelectionEditor["handleMouse"];
+  handlePaste?: PasteableEditor["handlePaste"];
   render: ComposerSelectionEditor["render"];
 };
 
@@ -90,6 +97,50 @@ function isReplace(data: string): boolean {
     || matchesKey(data, "ctrl+j");
 }
 
+function isPasteKey(data: string): boolean {
+  return matchesKey(data, "super+v") || matchesKey(data, "ctrl+v") || matchesKey(data, "alt+v");
+}
+
+export function tokenAtCursor(
+  text: string,
+  cursor: { line: number; col: number },
+): { kind: "paste" | "image"; start: number; end: number; number?: string } | undefined {
+  const line = text.split("\n")[cursor.line];
+  if (line === undefined) return undefined;
+  for (const match of line.matchAll(/\[paste #\d+( (?:\+\d+ lines|\d+ chars))?\]/g)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    if (cursor.col >= start && cursor.col <= end) return { kind: "paste", start, end };
+  }
+  for (const match of line.matchAll(/\[image[ -](\d+)\]/g)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    if (cursor.col >= start && cursor.col <= end) {
+      return { kind: "image", start, end, number: match[1] };
+    }
+  }
+  return undefined;
+}
+
+function expandCollapsed(editor: ComposerSelectionEditor, imagePath?: (number: string) => string | undefined): boolean {
+  const token = tokenAtCursor(editor.getText(), editor.getCursor());
+  if (!token) return false;
+  if (token.kind === "paste") {
+    const expanded = editor.getExpandedText();
+    if (expanded === editor.getText()) return false;
+    editor.setText(expanded);
+    return true;
+  }
+  const path = token.number ? imagePath?.(token.number) : undefined;
+  if (!path) return false;
+  const lines = editor.getText().split("\n");
+  const line = lines[editor.getCursor().line];
+  if (line === undefined) return false;
+  lines[editor.getCursor().line] = `${line.slice(0, token.start)}${path}${line.slice(token.end)}`;
+  editor.setText(lines.join("\n"));
+  return true;
+}
+
 /** Adds Phase 1 all-or-nothing selection semantics to one composer editor. */
 export class ComposerSelectionController {
   private installed?: InstalledEditor;
@@ -107,15 +158,24 @@ export class ComposerSelectionController {
 
     // Attach this before ImagePeek so peek stays outermost and still sees
     // setText replacements via its handleInput wrapper.
+    const pasteable = editor as PasteableEditor;
     const originalHandleInput = editor.handleInput;
     const originalHandleMouse = editor.handleMouse;
+    const originalHandlePaste = pasteable.handlePaste;
     const originalRender = editor.render;
 
     const collapse = (): void => {
       this.selectedLength = undefined;
     };
 
+    const expandIfCollapsed = (): boolean => expandCollapsed(editor, options.imagePath);
+
     const handleInput = (data: string): void => {
+      if (this.selectedLength === undefined && isPasteKey(data) && expandIfCollapsed()) {
+        this.escapeArmed = false;
+        return;
+      }
+
       if (matchesKey(data, "escape")) {
         const timestamp = this.now();
         if (
@@ -200,16 +260,30 @@ export class ComposerSelectionController {
       });
     };
 
+    const handlePaste = originalHandlePaste
+      ? (text: string): void => {
+        if (this.selectedLength === undefined && expandIfCollapsed()) return;
+        if (this.selectedLength !== undefined) {
+          editor.setText("");
+          collapse();
+        }
+        originalHandlePaste.call(editor, text);
+      }
+      : undefined;
+
     editor.handleInput = handleInput;
     editor.handleMouse = handleMouse;
     editor.render = render;
+    if (handlePaste) pasteable.handlePaste = handlePaste;
     this.installed = {
-      editor,
+      editor: pasteable,
       originalHandleInput,
       originalHandleMouse,
+      originalHandlePaste,
       originalRender,
       handleInput,
       handleMouse,
+      handlePaste,
       render,
     };
   }
@@ -225,6 +299,9 @@ export class ComposerSelectionController {
       }
       if (installed.editor.render === installed.render) {
         installed.editor.render = installed.originalRender;
+      }
+      if (installed.handlePaste && installed.editor.handlePaste === installed.handlePaste) {
+        installed.editor.handlePaste = installed.originalHandlePaste;
       }
     }
     this.installed = undefined;

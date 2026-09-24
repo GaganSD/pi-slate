@@ -402,6 +402,7 @@ export default function piSlate(pi: ExtensionAPI): void {
             () => ctx.ui.notify("Could not copy", "error"),
           );
         },
+        imagePath: (number) => images.pathFor(number),
       });
       images.attachEditor(activeEditor);
       return activeEditor;
