@@ -20,6 +20,7 @@ export const SESSION_BRANCH_PREFIX = "pi/";
 export const TMUX_SESSION_PREFIX = "pi-";
 export const REMOTE_ROOT_SEGMENT = "pi-cloud";
 export const WORKTREES_OWNED_BY = "subagents" as const;
+export const MIN_REMOTE_NODE = "22.19";
 
 const HOST_NAME =
   /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$/;
@@ -67,6 +68,7 @@ export type RemoteBlockerCode =
   | "duplicate-parent"
   | "stale-session"
   | "wrong-arch"
+  | "missing-tool"
   | "unknown-status";
 
 export type RemoteBlocker = {
@@ -191,6 +193,50 @@ export function posixQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+/** Quote every remote argv element so OpenSSH's remote shell cannot resplit or inject. */
+export function quoteRemoteCommand(command: readonly string[]): string {
+  return command.map(posixQuote).join(" ");
+}
+
+/** Inverse of quoteRemoteCommand. Invalid input is empty (fail-closed). */
+export function unquoteRemoteCommand(quoted: string): string[] {
+  if (!quoted || /[\n\r]/.test(quoted)) return [];
+  const words: string[] = [];
+  let i = 0;
+  while (i < quoted.length) {
+    if (quoted[i] === " ") {
+      i += 1;
+      continue;
+    }
+    if (quoted[i] !== "'") return [];
+    let word = "";
+    while (i < quoted.length && quoted[i] !== " ") {
+      if (quoted[i] === "'") {
+        i += 1;
+        const start = i;
+        const end = quoted.indexOf("'", i);
+        if (end < 0) return [];
+        word += quoted.slice(start, end);
+        i = end + 1;
+        continue;
+      }
+      if (quoted[i] === "\\" && quoted[i + 1] === "'") {
+        word += "'";
+        i += 2;
+        continue;
+      }
+      return [];
+    }
+    words.push(word);
+  }
+  return words;
+}
+
+export function isPosixQuotedCommand(quoted: string): boolean {
+  const words = unquoteRemoteCommand(quoted);
+  return words.length > 0 && quoteRemoteCommand(words) === quoted;
+}
+
 export function isSafeHostAddress(value: string): boolean {
   const address = value.trim();
   if (!address || address.length > 253) return false;
@@ -238,6 +284,36 @@ export function tmuxSessionFor(sessionId: string): string {
 export function normalizeRepo(value: string): string {
   if (OWNER_REPO.test(value)) return `https://github.com/${value}.git`;
   return value;
+}
+
+export function canonicalizeRepo(value: string): string {
+  let normalized = normalizeRepo(value).trim().replace(/\.git$/i, "").replace(/\/+$/, "");
+  const scp = /^git@([^:]+):(.+)$/.exec(normalized);
+  if (scp) normalized = `https://${scp[1]}/${scp[2]}`;
+  return normalized.toLowerCase();
+}
+
+export function sameRepo(left: string, right: string): boolean {
+  return canonicalizeRepo(left) === canonicalizeRepo(right);
+}
+
+export function nodeVersionAtLeast(raw: string, minimum = MIN_REMOTE_NODE): boolean {
+  const actual = parseDottedVersion(raw);
+  const needed = parseDottedVersion(minimum);
+  if (!actual || !needed) return false;
+  for (let i = 0; i < Math.max(actual.length, needed.length); i += 1) {
+    const a = actual[i] ?? 0;
+    const b = needed[i] ?? 0;
+    if (a > b) return true;
+    if (a < b) return false;
+  }
+  return true;
+}
+
+function parseDottedVersion(raw: string): number[] | undefined {
+  const match = /(\d+)\.(\d+)(?:\.(\d+))?/.exec(raw.trim());
+  if (!match) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
 }
 
 export function sshDestination(host: RemoteHost): string {
@@ -298,7 +374,7 @@ export function buildSshArgv(input: {
   if (input.identityFile) argv.push("-i", input.identityFile);
   argv.push(sshDestination(input.host));
   if (input.command && input.command.length > 0) {
-    argv.push("--", ...input.command);
+    argv.push(quoteRemoteCommand(input.command));
   }
   return argv;
 }
@@ -312,7 +388,11 @@ export function sshArgvIsSecure(argv: readonly string[]): boolean {
   if (!argv.some((part) => part.startsWith("UserKnownHostsFile=") && part.length > "UserKnownHostsFile=".length)) {
     return false;
   }
-  const remote = remoteArgv(argv);
+  const dest = sshDestinationIndex(argv);
+  if (dest < 0) return false;
+  const rest = argv.slice(dest + 1);
+  if (rest.includes("--") || rest.length !== 1 || !isPosixQuotedCommand(rest[0] ?? "")) return false;
+  const remote = unquoteRemoteCommand(rest[0] ?? "");
   if (remote[0] === "sh" || remote[0] === "bash" || (remote[0] === "env" && remote.includes("-c"))) return false;
   return true;
 }
@@ -324,10 +404,15 @@ export function looksLikeSecretTransfer(argv: readonly string[]): boolean {
 }
 
 export function remoteArgv(argv: readonly string[]): readonly string[] {
-  const separator = argv.indexOf("--");
-  if (separator >= 0) return argv.slice(separator + 1);
-  const dest = argv.findIndex((part, index) => index > 0 && !part.startsWith("-") && part.includes("@"));
-  return dest >= 0 ? argv.slice(dest + 1) : [];
+  const dest = sshDestinationIndex(argv);
+  if (dest < 0) return [];
+  const rest = argv.slice(dest + 1);
+  if (rest.includes("--") || rest.length !== 1) return [];
+  return unquoteRemoteCommand(rest[0] ?? "");
+}
+
+function sshDestinationIndex(argv: readonly string[]): number {
+  return argv.findIndex((part, index) => index > 0 && !part.startsWith("-") && part.includes("@"));
 }
 
 export function classifySshFailure(result: CommandResult): RemoteBlocker {
@@ -505,6 +590,9 @@ export function createRemoteTransport(options: RemoteTransportOptions = {}): Rem
         };
       }
 
+      const tools = await ensureRemoteTools(ssh);
+      if (!tools.ok) return { status: "blocked", blockers: tools.blockers, session: record };
+
       const existing = await ssh(["tmux", "has-session", "-t", record.tmuxSession]);
       if (existing.code === 0) {
         return {
@@ -548,6 +636,9 @@ export function createRemoteTransport(options: RemoteTransportOptions = {}): Rem
         return { status: "blocked", blockers: cloned.blockers, session: record };
       }
 
+      const piArgv = remotePiArgv.includes("--session-id")
+        ? [...remotePiArgv]
+        : [...remotePiArgv, "--session-id", sessionId];
       const started = await ssh([
         "tmux",
         "new-session",
@@ -556,10 +647,21 @@ export function createRemoteTransport(options: RemoteTransportOptions = {}): Rem
         record.tmuxSession,
         "-c",
         record.remotePath,
-        ...remotePiArgv,
+        ...piArgv,
       ]);
+      if (started.code !== 0) {
+        await ssh(["rmdir", paths.lock]);
+        return sshBlocked(started, record);
+      }
+      const verified = await ssh(["tmux", "has-session", "-t", record.tmuxSession]);
       await ssh(["rmdir", paths.lock]);
-      if (started.code !== 0) return sshBlocked(started, record);
+      if (verified.code !== 0) {
+        return {
+          status: "blocked",
+          blockers: [blocker("missing-tool", `tmux session ${record.tmuxSession} did not start; Pi parent is not running`)],
+          session: record,
+        };
+      }
 
       const live: SessionRecord = { ...record, status: "running" };
       await registry.put(live);
@@ -640,7 +742,7 @@ export function createRemoteTransport(options: RemoteTransportOptions = {}): Rem
       tty: true,
       command: ["tmux", "attach-session", "-t", session.tmuxSession],
     });
-    if (!sshArgvIsSecure(argv) || argv.includes("send-keys")) {
+    if (!sshArgvIsSecure(argv) || remoteArgv(argv).includes("send-keys")) {
       return { status: "blocked", blockers: [blocker("ssh-failure", "refusing insecure or prompt-replaying attach argv")] };
     }
     const attached = await attachRun(argv);
@@ -679,11 +781,36 @@ export async function selectRepoAndBase(input: RepoSelectionInput, run: CommandR
     if (!isSafeRepo(input.repo)) {
       return { ok: false, blockers: [blocker("invalid-repo", "repo is not a safe owner/repo or git URL")] };
     }
-    const baseBranch = input.branch ?? "main";
-    if (!isSafeBranch(baseBranch)) {
-      return { ok: false, blockers: [blocker("invalid-branch", "base branch is not a safe git ref")] };
+    const repo = normalizeRepo(input.repo);
+    if (input.branch) {
+      if (!isSafeBranch(input.branch)) {
+        return { ok: false, blockers: [blocker("invalid-branch", "base branch is not a safe git ref")] };
+      }
+      return { ok: true, repo, baseBranch: input.branch, workingBranch, inferred: false };
     }
-    return { ok: true, repo: normalizeRepo(input.repo), baseBranch, workingBranch, inferred: false };
+    const localBase = await localBranchIfSameRepo(input.cwd, repo, run);
+    if (localBase) {
+      if (!isSafeBranch(localBase)) {
+        return { ok: false, blockers: [blocker("invalid-branch", "base branch is not a safe git ref")] };
+      }
+      return { ok: true, repo, baseBranch: localBase, workingBranch, inferred: false };
+    }
+    const remoteHead = await discoverRemoteHead(repo, run);
+    if (remoteHead) {
+      if (!isSafeBranch(remoteHead)) {
+        return { ok: false, blockers: [blocker("invalid-branch", "remote HEAD is not a safe git ref")] };
+      }
+      return { ok: true, repo, baseBranch: remoteHead, workingBranch, inferred: false };
+    }
+    return {
+      ok: false,
+      blockers: [
+        blocker(
+          "missing-base-branch",
+          "could not use the current local branch or discover remote HEAD; pass --branch",
+        ),
+      ],
+    };
   }
   if (!input.cwd) {
     return {
@@ -867,14 +994,81 @@ async function ensureRemoteRepo(
       };
     }
   }
-  const branched = await ssh(["git", "-C", record.remotePath, "checkout", "-B", record.workingBranch]);
-  if (branched.code !== 0) {
+  const existingBranch = await ssh([
+    "git",
+    "-C",
+    record.remotePath,
+    "show-ref",
+    "--verify",
+    "--quiet",
+    `refs/heads/${record.workingBranch}`,
+  ]);
+  const switched =
+    existingBranch.code === 0
+      ? await ssh(["git", "-C", record.remotePath, "checkout", record.workingBranch])
+      : await ssh(["git", "-C", record.remotePath, "checkout", "-b", record.workingBranch]);
+  if (switched.code !== 0) {
     return {
       ok: false,
-      blockers: [blocker("invalid-branch", branched.stderr.trim() || "could not create isolated session branch")],
+      blockers: [blocker("invalid-branch", switched.stderr.trim() || "could not create isolated session branch")],
     };
   }
   return { ok: true };
+}
+
+async function ensureRemoteTools(
+  ssh: (command: readonly string[]) => Promise<CommandResult>,
+): Promise<{ ok: true } | { ok: false; blockers: RemoteBlocker[] }> {
+  const node = await ssh(["node", "-p", "process.versions.node"]);
+  if (node.code !== 0 || !node.stdout.trim()) {
+    return {
+      ok: false,
+      blockers: [blocker("missing-tool", "remote node is missing; install Node.js >= 22.19 on the VM")],
+    };
+  }
+  if (!nodeVersionAtLeast(node.stdout, MIN_REMOTE_NODE)) {
+    return {
+      ok: false,
+      blockers: [
+        blocker(
+          "missing-tool",
+          `remote node is ${node.stdout.trim()}; Node.js >= ${MIN_REMOTE_NODE} is required`,
+        ),
+      ],
+    };
+  }
+  const git = await ssh(["git", "--version"]);
+  if (git.code !== 0) {
+    return { ok: false, blockers: [blocker("missing-tool", "remote git is missing; install git on the VM")] };
+  }
+  const tmux = await ssh(["tmux", "-V"]);
+  if (tmux.code !== 0) {
+    return { ok: false, blockers: [blocker("missing-tool", "remote tmux is missing; install tmux on the VM")] };
+  }
+  const pi = await ssh(["pi", "--version"]);
+  if (pi.code !== 0) {
+    return { ok: false, blockers: [blocker("missing-tool", "remote pi is missing; install Pi on the VM")] };
+  }
+  return { ok: true };
+}
+
+async function localBranchIfSameRepo(
+  cwd: string | undefined,
+  repo: string,
+  run: CommandRunner,
+): Promise<string | undefined> {
+  if (!cwd) return undefined;
+  const origin = await run(["git", "-C", cwd, "remote", "get-url", "origin"]);
+  if (origin.code !== 0 || !origin.stdout.trim() || !sameRepo(origin.stdout.trim(), repo)) return undefined;
+  const current = (await run(["git", "-C", cwd, "branch", "--show-current"])).stdout.trim();
+  return current || undefined;
+}
+
+async function discoverRemoteHead(repo: string, run: CommandRunner): Promise<string | undefined> {
+  const listed = await run(["git", "ls-remote", "--symref", repo, "HEAD"]);
+  if (listed.code !== 0) return undefined;
+  const match = /^ref:\s+refs\/heads\/(\S+)/m.exec(listed.stdout);
+  return match?.[1];
 }
 
 async function inspectRemote(
