@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /** Browser-session profile. The CLI holds the token; this module never reads ~/.oci secrets. */
 export const OCI_PROFILE = "PI_CLOUD";
@@ -200,6 +203,8 @@ export type OciProviderOptions = {
   run?: CommandRunner;
   ociBin?: string;
   profile?: string;
+  /** Explicit OCI CLI config path. Defaults to OCI_CLI_CONFIG_FILE or ~/.oci/config. */
+  configFile?: string;
   capacityRetryDelayMs?: number;
   wait?: (ms: number) => Promise<void>;
 };
@@ -213,6 +218,64 @@ export type OciProvider = {
 
 export function isMutatingArgv(argv: readonly string[]): boolean {
   return argv.some((token) => MUTATING_TOKENS.has(token));
+}
+
+const TENANCY_OCID = /^ocid1\.tenancy\.[a-z0-9]+\.[a-z0-9-]*\.[A-Za-z0-9_-]+$/;
+const REGION_NAME = /^[a-z]{2,}-[a-z0-9]+-\d+$/;
+
+export function isTenancyOcid(value: string): boolean {
+  return TENANCY_OCID.test(value);
+}
+
+export function defaultOciConfigPath(): string {
+  const fromEnv = process.env.OCI_CLI_CONFIG_FILE?.trim();
+  if (fromEnv) return fromEnv;
+  return join(homedir(), ".oci", "config");
+}
+
+/**
+ * Read only the non-secret `tenancy` OCID from one named profile section.
+ * Never opens key_file / security_token_file or returns other profile keys.
+ */
+export function readProfileTenancyOcid(
+  configPath: string,
+  profile: string,
+): { ok: true; tenancyId: string } | { ok: false; error: string } {
+  const wanted = profile.trim();
+  if (!wanted || /[\r\n\[\]]/.test(wanted)) {
+    return { ok: false, error: "invalid OCI profile name" };
+  }
+  let text: string;
+  try {
+    text = readFileSync(configPath, "utf8");
+  } catch {
+    return { ok: false, error: "OCI config file is inaccessible" };
+  }
+  let inSection = false;
+  let seenSection = 0;
+  let tenancy: string | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+    const section = /^\[([^\]]+)\]$/.exec(line);
+    if (section) {
+      inSection = section[1].trim() === wanted;
+      if (inSection) seenSection += 1;
+      if (seenSection > 1) return { ok: false, error: `duplicate [${wanted}] profile section` };
+      continue;
+    }
+    if (!inSection) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim().toLowerCase();
+    if (key !== "tenancy") continue;
+    if (tenancy !== undefined) return { ok: false, error: `duplicate tenancy key in [${wanted}]` };
+    tenancy = line.slice(eq + 1).trim();
+  }
+  if (seenSection === 0) return { ok: false, error: `missing [${wanted}] profile section` };
+  if (!tenancy) return { ok: false, error: `missing tenancy in [${wanted}]` };
+  if (!isTenancyOcid(tenancy)) return { ok: false, error: "profile tenancy is not a valid tenancy OCID" };
+  return { ok: true, tenancyId: tenancy };
 }
 
 export function cliValue(obj: Record<string, unknown>, snake: string): unknown {
@@ -367,6 +430,7 @@ export function createOciProvider(options: OciProviderOptions = {}): OciProvider
   const run = options.run ?? spawnCommand;
   const ociBin = options.ociBin ?? "oci";
   const profile = options.profile ?? OCI_PROFILE;
+  const configFile = options.configFile ?? defaultOciConfigPath();
   const wait = options.wait ?? defaultWait;
   const capacityRetryDelayMs = options.capacityRetryDelayMs ?? 0;
 
@@ -375,11 +439,11 @@ export function createOciProvider(options: OciProviderOptions = {}): OciProvider
   };
 
   const preflight = async (): Promise<AccountSnapshot> => {
-    return await loadAccount(exec);
+    return await loadAccount(exec, configFile, profile);
   };
 
   const discover = async (query: DiscoveryQuery = {}): Promise<DiscoveryResult> => {
-    const account = await loadAccount(exec);
+    const account = await loadAccount(exec, configFile, profile);
     if (!account.authenticated || !account.tenancyId || !account.homeRegion) {
       return {
         account,
@@ -662,7 +726,21 @@ function emptyInventory(): InventorySnapshot {
 
 async function loadAccount(
   exec: (parts: readonly string[], region?: string) => Promise<CommandResult>,
+  configFile: string,
+  profile: string,
 ): Promise<AccountSnapshot> {
+  const fromConfig = readProfileTenancyOcid(configFile, profile);
+  if (!fromConfig.ok) {
+    return {
+      authenticated: false,
+      billingPlan: "unknown",
+      subscriptionAccess: "unknown",
+      subscriptions: [],
+      evidence: fromConfig.error,
+    };
+  }
+  const tenancyId = fromConfig.tenancyId;
+
   const regions = await readJson(exec(["iam", "region-subscription", "list"]));
   if (!regions.ok) {
     return {
@@ -674,16 +752,36 @@ async function loadAccount(
     };
   }
   const regionItems = ociItems(regions.value);
-  const home = regionItems.find((item) => cliValue(item, "is_home_region") === true);
-  const tenancyId = asString(cliValue(home ?? regionItems[0] ?? {}, "tenancy_id"));
-  const homeRegion = asString(cliValue(home ?? {}, "region_name"));
-  if (!tenancyId || !homeRegion) {
+  const homes = regionItems.filter((item) => cliValue(item, "is_home_region") === true);
+  if (homes.length !== 1) {
     return {
       authenticated: false,
       billingPlan: "unknown",
       subscriptionAccess: "unknown",
       subscriptions: [],
-      evidence: "region-subscription list did not include tenancy-id and home region-name",
+      evidence: homes.length === 0 ? "region-subscription list has no home region" : "region-subscription list has multiple home regions",
+    };
+  }
+  const homeRegion = asString(cliValue(homes[0], "region_name"));
+  if (!homeRegion || !REGION_NAME.test(homeRegion)) {
+    return {
+      authenticated: false,
+      billingPlan: "unknown",
+      subscriptionAccess: "unknown",
+      subscriptions: [],
+      evidence: "region-subscription home region-name is missing or invalid",
+    };
+  }
+  const listedTenancies = regionItems
+    .map((item) => asString(cliValue(item, "tenancy_id")))
+    .filter((id): id is string => Boolean(id));
+  if (listedTenancies.some((id) => id !== tenancyId)) {
+    return {
+      authenticated: false,
+      billingPlan: "unknown",
+      subscriptionAccess: "unknown",
+      subscriptions: [],
+      evidence: "region-subscription tenancy-id does not match the PI_CLOUD profile tenancy",
     };
   }
 

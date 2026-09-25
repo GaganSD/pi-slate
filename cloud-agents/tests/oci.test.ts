@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   A1_MEMORY_GB,
@@ -20,9 +23,12 @@ import {
   isForbiddenSshCidr,
   isMutatingArgv,
   isOperatorSshCidr,
+  isTenancyOcid,
+  readProfileTenancyOcid,
   type CommandResult,
   type CommandRunner,
   type CreateRequest,
+  type OciProviderOptions,
 } from "../src/oci.ts";
 
 const TENANCY = "ocid1.tenancy.oc1..aaaa";
@@ -66,17 +72,29 @@ function fail(message: string): CommandResult {
 
 function regionSubscriptions(): CommandResult {
   return ok([
-    { "is-home-region": false, "region-name": "us-ashburn-1", "tenancy-id": TENANCY },
-    { "is-home-region": true, "region-name": HOME, "tenancy-id": TENANCY },
+    { "is-home-region": false, "region-key": "IAD", "region-name": "us-ashburn-1", status: "READY" },
+    { "is-home-region": true, "region-key": "SIN", "region-name": HOME, status: "READY" },
   ]);
 }
 
 function subscriptions(planType: string | undefined, extra: Array<Record<string, unknown>> = []): CommandResult {
   const items = [
-    ...(planType === undefined ? [{ id: "sub-1" }] : [{ id: "sub-1", "plan-type": planType }]),
+    ...(planType === undefined
+      ? [{ id: "sub-1", "account-type": "PERSONAL" }]
+      : [{ id: "sub-1", "plan-type": planType, "account-type": "PERSONAL", "is-intent-to-pay": false }]),
     ...extra,
   ];
   return ok({ items });
+}
+
+const CONFIG = join(mkdtempSync(join(tmpdir(), "pi-cloud-oci-")), "config");
+writeFileSync(
+  CONFIG,
+  `[DEFAULT]\nuser=ocid1.user.oc1..other\n[PI_CLOUD]\ntenancy=${TENANCY}\nregion=ap-singapore-1\nsecurity_token_file=/tmp/not-read\n`,
+);
+
+function ociProvider(options: OciProviderOptions): ReturnType<typeof createOciProvider> {
+  return createOciProvider({ configFile: CONFIG, ...options });
 }
 
 function baseHandlers(overrides: Handlers = {}): Handlers {
@@ -195,7 +213,7 @@ test("Always Free A1 image allowlist matches official families only", () => {
 
 test("preflight uses PI_CLOUD security_token and never mutates", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const provider = ociProvider({ run: fakeRunner({}, log) });
   const account = await provider.preflight();
   assert.equal(account.authenticated, true);
   assert.equal(account.tenancyId, TENANCY);
@@ -211,11 +229,15 @@ test("preflight uses PI_CLOUD security_token and never mutates", async () => {
     log.some((argv) => argv.includes("osp-gateway") && argv.includes("subscription-service")),
     true,
   );
+  assert.equal(
+    log.some((argv) => argv.includes("subscription") && argv.includes(TENANCY) && argv.includes(HOME)),
+    true,
+  );
 });
 
 test("wrong home region blocks create and issues no writes", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const provider = ociProvider({ run: fakeRunner({}, log) });
   const result = await provider.create(request({ region: "us-ashburn-1", confirm: async () => true }));
   assert.equal(result.status, "blocked");
   assert.equal(result.blockers.some((blocker) => blocker.code === "wrong-home-region"), true);
@@ -223,7 +245,7 @@ test("wrong home region blocks create and issues no writes", async () => {
 });
 
 test("PAYG plan blocks create", async () => {
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner({
       "osp-gateway subscription-service subscription list": () => subscriptions("PAYG"),
     }),
@@ -237,7 +259,7 @@ test("PAYG plan blocks create", async () => {
 });
 
 test("unknown or mixed plan blocks create", async () => {
-  const unknownProvider = createOciProvider({
+  const unknownProvider = ociProvider({
     run: fakeRunner({
       "osp-gateway subscription-service subscription list": () => subscriptions(undefined),
     }),
@@ -245,7 +267,7 @@ test("unknown or mixed plan blocks create", async () => {
   const unknown = await unknownProvider.evaluateCreate(request());
   assert.equal(unknown.blockers.some((blocker) => blocker.code === "unknown-plan"), true);
 
-  const mixedProvider = createOciProvider({
+  const mixedProvider = ociProvider({
     run: fakeRunner({
       "osp-gateway subscription-service subscription list": () =>
         subscriptions("FREE_TIER", [{ id: "sub-2", "plan-type": "PAYG" }]),
@@ -255,7 +277,7 @@ test("unknown or mixed plan blocks create", async () => {
   assert.equal(mixed.account.billingPlan, "unknown");
   assert.equal(mixed.blockers.some((blocker) => blocker.code === "unknown-plan"), true);
 
-  const failedProvider = createOciProvider({
+  const failedProvider = ociProvider({
     run: fakeRunner({
       "osp-gateway subscription-service subscription list": () => fail("Authorization failed or requested resource not found"),
     }),
@@ -266,7 +288,7 @@ test("unknown or mixed plan blocks create", async () => {
 });
 
 test("preexisting A1 usage blocks another 2 OCPU / 12 GB create", async () => {
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner({
       "compute instance list": () => ok([liveA1()]),
     }),
@@ -278,7 +300,7 @@ test("preexisting A1 usage blocks another 2 OCPU / 12 GB create", async () => {
 });
 
 test("preserved volumes that exhaust the 200 GB aggregate block create", async () => {
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner({
       "bv boot-volume list": () =>
         ok([
@@ -299,7 +321,7 @@ test("preserved volumes that exhaust the 200 GB aggregate block create", async (
 });
 
 test("failed inventory blocks create", async () => {
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner({
       "compute instance list": () => fail("NotAuthorizedOrNotFound"),
     }),
@@ -311,7 +333,7 @@ test("failed inventory blocks create", async () => {
 
 test("open SSH CIDR blocks create and never writes 0.0.0.0/0", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const provider = ociProvider({ run: fakeRunner({}, log) });
   const result = await provider.create(request({ publicSshCidr: "0.0.0.0/0", confirm: async () => true }));
   assert.equal(result.status, "blocked");
   assert.equal(result.blockers.some((blocker) => blocker.code === "open-ssh"), true);
@@ -325,7 +347,7 @@ test("open SSH CIDR blocks create and never writes 0.0.0.0/0", async () => {
 test("capacity failure is bounded, surfaces partial network, and has no paid fallback", async () => {
   const log: string[][] = [];
   let launches = 0;
-  const provider = createOciProvider({
+  const provider = ociProvider({
     capacityRetryDelayMs: 0,
     run: fakeRunner(
       {
@@ -362,7 +384,7 @@ test("exact instance id is adopted without writes", async () => {
     "display-name": DEFAULT_DISPLAY_NAME,
     "freeform-tags": { "managed-by": MANAGED_BY },
   });
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner(
       {
         "compute instance list": () => ok([existing]),
@@ -380,7 +402,7 @@ test("exact instance id is adopted without writes", async () => {
 
 test("FREE_TIER alone does not authorize create without confirmation", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const provider = ociProvider({ run: fakeRunner({}, log) });
   const report = await provider.evaluateCreate(request());
   assert.equal(report.eligible, true);
   assert.equal(report.intended?.imageId, IMAGE);
@@ -394,7 +416,7 @@ test("FREE_TIER alone does not authorize create without confirmation", async () 
 
 test("confirmed free-tier create launches home-region A1 2/12 with /32 SSH", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const provider = ociProvider({ run: fakeRunner({}, log) });
   const result = await provider.create(request({ confirm: async () => true }));
   assert.equal(result.status, "created");
   assert.equal(result.instance?.shape, A1_SHAPE);
@@ -436,7 +458,7 @@ test("only AVAILABLE platform images with compartment-id null are eligible", () 
 });
 
 test("custom or unmarked images block create", async () => {
-  const custom = createOciProvider({
+  const custom = ociProvider({
     run: fakeRunner({
       "compute image list": () =>
         ok([
@@ -454,7 +476,7 @@ test("custom or unmarked images block create", async () => {
   assert.equal(customReport.eligible, false);
   assert.equal(customReport.blockers.some((blocker) => blocker.code === "image-ineligible"), true);
 
-  const unmarked = createOciProvider({
+  const unmarked = ociProvider({
     run: fakeRunner({
       "compute image list": () =>
         ok([
@@ -474,7 +496,7 @@ test("custom or unmarked images block create", async () => {
 
 test("boot volume below 50 GB is rejected before network writes", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const provider = ociProvider({ run: fakeRunner({}, log) });
   const result = await provider.create(request({ bootVolumeGb: MIN_BOOT_VOLUME_GB - 1, confirm: async () => true }));
   assert.equal(result.status, "blocked");
   assert.equal(result.blockers.some((blocker) => blocker.code === "boot-size"), true);
@@ -483,7 +505,7 @@ test("boot volume below 50 GB is rejected before network writes", async () => {
 
 test("failed network lookup does not create a duplicate", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner(
       {
         "network vcn list": () => fail("NotAuthorizedOrNotFound"),
@@ -499,7 +521,7 @@ test("failed network lookup does not create a duplicate", async () => {
 
 test("foreign NSG on an owned VCN is refused", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner(
       {
         "network vcn list": () =>
@@ -532,7 +554,7 @@ test("foreign NSG on an owned VCN is refused", async () => {
 
 test("route-table update failure keeps partial network and does not launch", async () => {
   const log: string[][] = [];
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner(
       {
         "network route-table update": () => fail("NotAuthorized"),
@@ -550,7 +572,7 @@ test("route-table update failure keeps partial network and does not launch", asy
 test("200 GB aggregate is boot+block only; backups are a separate five-slot allowance", async () => {
   assert.equal(ALWAYS_FREE_BACKUP_SLOTS, 5);
   const log: string[][] = [];
-  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const provider = ociProvider({ run: fakeRunner({}, log) });
   const report = await provider.evaluateCreate(request());
   assert.equal(report.inventory.storageGb, 0);
   assert.equal(log.some((argv) => argv.includes("backup")), false);
@@ -559,7 +581,7 @@ test("200 GB aggregate is boot+block only; backups are a separate five-slot allo
 test("plan flip after confirm blocks create with zero writes", async () => {
   const log: string[][] = [];
   let afterConfirm = false;
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner(
       {
         "osp-gateway subscription-service subscription list": () =>
@@ -584,7 +606,7 @@ test("plan flip after confirm blocks create with zero writes", async () => {
 test("A1 inventory change after confirm blocks create with zero writes", async () => {
   const log: string[][] = [];
   let afterConfirm = false;
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner(
       {
         "compute instance list": () => ok(afterConfirm ? [liveA1()] : []),
@@ -608,7 +630,7 @@ test("A1 inventory change after confirm blocks create with zero writes", async (
 test("selected image change after confirm does not switch images or write", async () => {
   const log: string[][] = [];
   let afterConfirm = false;
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner(
       {
         "compute image list": () =>
@@ -643,7 +665,7 @@ test("selected image change after confirm does not switch images or write", asyn
 test("instance appearing after confirm must be adopted on a separate run", async () => {
   const log: string[][] = [];
   let afterConfirm = false;
-  const provider = createOciProvider({
+  const provider = ociProvider({
     run: fakeRunner(
       {
         "compute instance list": () =>
@@ -675,4 +697,90 @@ test("instance appearing after confirm must be adopted on a separate run", async
   assert.equal(result.blockers.some((blocker) => blocker.code === "stale-eligibility"), true);
   assert.match(result.blockers[0]?.message ?? "", /separate run/);
   assert.equal(log.some((argv) => isMutatingArgv(argv)), false);
+});
+
+test("tenancy OCID comes from PI_CLOUD config, not region-subscription", async () => {
+  assert.equal(isTenancyOcid(TENANCY), true);
+  assert.equal(isTenancyOcid("ocid1.compartment.oc1..aaaa"), false);
+  const liveShaped = ociProvider({
+    run: fakeRunner({
+      "iam region-subscription list": () =>
+        ok([
+          {
+            "is-home-region": true,
+            "region-key": "SIN",
+            "region-name": "ap-singapore-1",
+            status: "READY",
+          },
+        ]),
+    }),
+  });
+  const account = await liveShaped.preflight();
+  assert.equal(account.authenticated, true);
+  assert.equal(account.tenancyId, TENANCY);
+  assert.equal(account.homeRegion, "ap-singapore-1");
+  assert.equal(account.billingPlan, "free-tier");
+  assert.equal(account.subscriptions[0]?.accountType, "PERSONAL");
+});
+
+test("readProfileTenancyOcid rejects missing, duplicate, and invalid tenancy", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-cloud-oci-neg-"));
+  const missingSection = join(dir, "missing.ini");
+  writeFileSync(missingSection, "[DEFAULT]\ntenancy=ocid1.tenancy.oc1..bbbb\n");
+  assert.equal(readProfileTenancyOcid(missingSection, "PI_CLOUD").ok, false);
+
+  const missingTenancy = join(dir, "notenancy.ini");
+  writeFileSync(missingTenancy, "[PI_CLOUD]\nregion=ap-singapore-1\n");
+  assert.equal(readProfileTenancyOcid(missingTenancy, "PI_CLOUD").ok, false);
+
+  const duplicateSection = join(dir, "dup-section.ini");
+  writeFileSync(duplicateSection, `[PI_CLOUD]\ntenancy=${TENANCY}\n[OTHER]\nfoo=1\n[PI_CLOUD]\ntenancy=${TENANCY}\n`);
+  assert.equal(readProfileTenancyOcid(duplicateSection, "PI_CLOUD").ok, false);
+
+  const duplicateKey = join(dir, "dup-key.ini");
+  writeFileSync(duplicateKey, `[PI_CLOUD]\ntenancy=${TENANCY}\ntenancy=${TENANCY}\n`);
+  assert.equal(readProfileTenancyOcid(duplicateKey, "PI_CLOUD").ok, false);
+
+  const invalid = join(dir, "invalid.ini");
+  writeFileSync(invalid, "[PI_CLOUD]\ntenancy=not-an-ocid\n");
+  const invalidResult = readProfileTenancyOcid(invalid, "PI_CLOUD");
+  assert.equal(invalidResult.ok, false);
+  if (!invalidResult.ok) assert.equal(invalidResult.error.includes("not-an-ocid"), false);
+
+  const inaccessible = join(dir, "no-such-config");
+  assert.equal(readProfileTenancyOcid(inaccessible, "PI_CLOUD").ok, false);
+
+  const okRead = readProfileTenancyOcid(CONFIG, "PI_CLOUD");
+  assert.equal(okRead.ok, true);
+  if (okRead.ok) assert.equal(okRead.tenancyId, TENANCY);
+});
+
+test("mismatched region-subscription tenancy-id fails closed", async () => {
+  const provider = ociProvider({
+    run: fakeRunner({
+      "iam region-subscription list": () =>
+        ok([
+          {
+            "is-home-region": true,
+            "region-name": HOME,
+            "tenancy-id": "ocid1.tenancy.oc1..other",
+          },
+        ]),
+    }),
+  });
+  const account = await provider.preflight();
+  assert.equal(account.authenticated, false);
+  assert.match(account.evidence, /does not match/);
+});
+
+test("missing home region fails closed", async () => {
+  const provider = ociProvider({
+    run: fakeRunner({
+      "iam region-subscription list": () =>
+        ok([{ "is-home-region": false, "region-name": "us-ashburn-1", status: "READY" }]),
+    }),
+  });
+  const account = await provider.preflight();
+  assert.equal(account.authenticated, false);
+  assert.match(account.evidence, /no home region/);
 });
