@@ -4,16 +4,19 @@ import {
   A1_MEMORY_GB,
   A1_OCPUS,
   A1_SHAPE,
+  ALWAYS_FREE_BACKUP_SLOTS,
   ALWAYS_FREE_STORAGE_GB,
   DEFAULT_BOOT_VOLUME_GB,
   DEFAULT_DISPLAY_NAME,
   MANAGED_BY,
   MAX_CAPACITY_ATTEMPTS,
+  MIN_BOOT_VOLUME_GB,
   OCI_AUTH,
   OCI_PROFILE,
   classifySubscriptions,
   createOciProvider,
   isAlwaysFreeEligibleA1Image,
+  isAvailablePlatformImage,
   isForbiddenSshCidr,
   isMutatingArgv,
   isOperatorSshCidr,
@@ -92,8 +95,12 @@ function baseHandlers(overrides: Handlers = {}): Handlers {
           id: IMAGE,
           "operating-system": "Canonical Ubuntu",
           "display-name": "Canonical-Ubuntu-22.04",
+          "compartment-id": null,
+          "lifecycle-state": "AVAILABLE",
         },
       ]),
+    "bv backup list": () => fail("backup inventory must not be queried"),
+    "bv boot-volume-backup list": () => fail("backup inventory must not be queried"),
     "network vcn list": () => ok([]),
     "network internet-gateway list": () => ok([]),
     "network security-list list": () => ok([]),
@@ -376,6 +383,9 @@ test("FREE_TIER alone does not authorize create without confirmation", async () 
   const provider = createOciProvider({ run: fakeRunner({}, log) });
   const report = await provider.evaluateCreate(request());
   assert.equal(report.eligible, true);
+  assert.equal(report.intended?.imageId, IMAGE);
+  assert.equal(report.intended?.imageName, "Canonical-Ubuntu-22.04");
+  assert.equal(report.image?.id, IMAGE);
   const result = await provider.create(request());
   assert.equal(result.status, "unconfirmed");
   assert.equal(result.blockers.some((blocker) => blocker.code === "unconfirmed-write"), true);
@@ -398,4 +408,150 @@ test("confirmed free-tier create launches home-region A1 2/12 with /32 SSH", asy
   assert.ok(nsgAdd);
   assert.equal(nsgAdd.some((part) => part.includes(SSH_CIDR)), true);
   assert.equal(nsgAdd.some((part) => part.includes("0.0.0.0/0")), false);
+  assert.equal(launch.includes(IMAGE), true);
+});
+
+test("only AVAILABLE platform images with compartment-id null are eligible", () => {
+  assert.equal(
+    isAvailablePlatformImage({
+      "compartment-id": null,
+      "lifecycle-state": "AVAILABLE",
+    }),
+    true,
+  );
+  assert.equal(
+    isAvailablePlatformImage({
+      "lifecycle-state": "AVAILABLE",
+      "operating-system": "Canonical Ubuntu",
+    }),
+    false,
+  );
+  assert.equal(
+    isAvailablePlatformImage({
+      "compartment-id": TENANCY,
+      "lifecycle-state": "AVAILABLE",
+    }),
+    false,
+  );
+});
+
+test("custom or unmarked images block create", async () => {
+  const custom = createOciProvider({
+    run: fakeRunner({
+      "compute image list": () =>
+        ok([
+          {
+            id: "ocid1.image.oc1..custom",
+            "operating-system": "Canonical Ubuntu",
+            "display-name": "my-custom-ubuntu",
+            "compartment-id": TENANCY,
+            "lifecycle-state": "AVAILABLE",
+          },
+        ]),
+    }),
+  });
+  const customReport = await custom.evaluateCreate(request());
+  assert.equal(customReport.eligible, false);
+  assert.equal(customReport.blockers.some((blocker) => blocker.code === "image-ineligible"), true);
+
+  const unmarked = createOciProvider({
+    run: fakeRunner({
+      "compute image list": () =>
+        ok([
+          {
+            id: "ocid1.image.oc1..unknown",
+            "operating-system": "Canonical Ubuntu",
+            "display-name": "Canonical-Ubuntu-22.04",
+            "lifecycle-state": "AVAILABLE",
+          },
+        ]),
+    }),
+  });
+  const unmarkedReport = await unmarked.evaluateCreate(request());
+  assert.equal(unmarkedReport.eligible, false);
+  assert.match(unmarkedReport.blockers.find((blocker) => blocker.code === "image-ineligible")?.message ?? "", /compartment-id key missing/);
+});
+
+test("boot volume below 50 GB is rejected before network writes", async () => {
+  const log: string[][] = [];
+  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const result = await provider.create(request({ bootVolumeGb: MIN_BOOT_VOLUME_GB - 1, confirm: async () => true }));
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "boot-size"), true);
+  assert.equal(log.some((argv) => isMutatingArgv(argv)), false);
+});
+
+test("failed network lookup does not create a duplicate", async () => {
+  const log: string[][] = [];
+  const provider = createOciProvider({
+    run: fakeRunner(
+      {
+        "network vcn list": () => fail("NotAuthorizedOrNotFound"),
+      },
+      log,
+    ),
+  });
+  const result = await provider.create(request({ confirm: async () => true }));
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "failed-inventory"), true);
+  assert.equal(log.some((argv) => argv.includes("vcn") && argv.includes("create")), false);
+});
+
+test("foreign NSG on an owned VCN is refused", async () => {
+  const log: string[][] = [];
+  const provider = createOciProvider({
+    run: fakeRunner(
+      {
+        "network vcn list": () =>
+          ok([
+            {
+              id: "ocid1.vcn.oc1..vcn",
+              "display-name": `${DEFAULT_DISPLAY_NAME}-vcn`,
+              "lifecycle-state": "AVAILABLE",
+              "freeform-tags": { "managed-by": MANAGED_BY },
+            },
+          ]),
+        "network nsg list": () =>
+          ok([
+            {
+              id: "ocid1.networksecuritygroup.oc1..foreign",
+              "display-name": `${DEFAULT_DISPLAY_NAME}-nsg`,
+              "lifecycle-state": "AVAILABLE",
+              "freeform-tags": { "managed-by": "someone-else" },
+            },
+          ]),
+      },
+      log,
+    ),
+  });
+  const result = await provider.create(request({ confirm: async () => true }));
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "ownership"), true);
+  assert.equal(log.some((argv) => isMutatingArgv(argv)), false);
+});
+
+test("route-table update failure keeps partial network and does not launch", async () => {
+  const log: string[][] = [];
+  const provider = createOciProvider({
+    run: fakeRunner(
+      {
+        "network route-table update": () => fail("NotAuthorized"),
+      },
+      log,
+    ),
+  });
+  const result = await provider.create(request({ confirm: async () => true }));
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "permissions"), true);
+  assert.equal(result.partial.some((item) => item.kind === "vcn"), true);
+  assert.equal(log.some((argv) => argv.includes("instance") && argv.includes("launch")), false);
+});
+
+test("200 GB aggregate is boot+block only; backups are a separate five-slot allowance", async () => {
+  assert.equal(ALWAYS_FREE_BACKUP_SLOTS, 5);
+  const log: string[][] = [];
+  const provider = createOciProvider({ run: fakeRunner({}, log) });
+  const report = await provider.evaluateCreate(request());
+  assert.equal(report.inventory.storageGb, 0);
+  assert.equal(log.some((argv) => argv.includes("backup")), false);
 });

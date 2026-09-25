@@ -8,8 +8,16 @@ export const OCI_AUTH = "security_token";
 export const A1_SHAPE = "VM.Standard.A1.Flex";
 export const A1_OCPUS = 2;
 export const A1_MEMORY_GB = 12;
+/**
+ * Always Free block storage is 200 GB combined boot + block volumes.
+ * Oracle documents five volume-backup slots separately; backups do not consume the 200 GB.
+ * This module never creates backups and does not inventory them.
+ * Source: https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
+ */
 export const ALWAYS_FREE_STORAGE_GB = 200;
-export const MIN_BOOT_VOLUME_GB = 47;
+export const ALWAYS_FREE_BACKUP_SLOTS = 5;
+/** `oci compute instance launch --boot-volume-size-in-gbs` minimum is 50 GB. */
+export const MIN_BOOT_VOLUME_GB = 50;
 export const DEFAULT_BOOT_VOLUME_GB = 50;
 export const MANAGED_BY = "pi-cloud";
 export const DEFAULT_DISPLAY_NAME = "pi-cloud";
@@ -43,7 +51,11 @@ export type CommandRunner = (argv: readonly string[]) => Promise<CommandResult>;
 
 export type ConfirmFn = (action: string, details: unknown) => Promise<boolean>;
 
-/** OSP Gateway planType. FREE_TIER includes trial; it is not an Always Free proof. */
+/**
+ * OSP Gateway planType is the account-family signal only.
+ * FREE_TIER includes trial; PAYG/mixed/unknown block create.
+ * Always Free shape/storage is proven separately by a permitted platform image and tenancy usage.
+ */
 export type BillingPlan = "free-tier" | "payg" | "unknown";
 
 export type BlockerCode =
@@ -115,6 +127,7 @@ export type InventorySnapshot = {
   volumes: VolumeSummary[];
   a1Ocpus: number;
   a1MemoryGb: number;
+  /** Boot + block GB only. Backup bytes are not included. */
   storageGb: number;
   failedQueries: string[];
   attachmentsKnown: boolean;
@@ -144,12 +157,19 @@ export type CreateRequest = {
   confirm?: ConfirmFn;
 };
 
+export type SelectedImage = {
+  id: string;
+  displayName: string;
+  operatingSystem: string;
+};
+
 export type EligibilityReport = {
   eligible: boolean;
   blockers: Blocker[];
   account: AccountSnapshot;
   inventory: InventorySnapshot;
   adopted?: InstanceSummary;
+  image?: SelectedImage;
   plannedWrites: string[];
   intended?: {
     region: string;
@@ -159,6 +179,8 @@ export type EligibilityReport = {
     bootVolumeGb: number;
     sshCidr: string;
     displayName: string;
+    imageId?: string;
+    imageName?: string;
   };
 };
 
@@ -201,9 +223,28 @@ export function cliValue(obj: Record<string, unknown>, snake: string): unknown {
   return undefined;
 }
 
+export function hasCliKey(obj: Record<string, unknown>, snake: string): boolean {
+  const kebab = snake.replaceAll("_", "-");
+  const camel = snake.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+  return (
+    Object.prototype.hasOwnProperty.call(obj, kebab) ||
+    Object.prototype.hasOwnProperty.call(obj, camel) ||
+    Object.prototype.hasOwnProperty.call(obj, snake)
+  );
+}
+
+/** Platform images serialize `compartment-id: null`. A missing key is not authoritative. */
+export function isAvailablePlatformImage(image: Record<string, unknown>): boolean {
+  if (!hasCliKey(image, "compartment_id")) return false;
+  if (cliValue(image, "compartment_id") !== null) return false;
+  const state = (asString(cliValue(image, "lifecycle_state")) ?? "").toUpperCase();
+  return state === "AVAILABLE";
+}
+
 /**
  * Billing plan comes only from OSP Gateway plan-type / planType.
  * account-type PERSONAL|CORPORATE is not a billing plan and is ignored.
+ * FREE_TIER is the account-family signal (includes trial); it is not a second Always Free proof.
  */
 export function classifySubscriptions(items: Array<Record<string, unknown>>): {
   plan: BillingPlan;
@@ -419,9 +460,39 @@ export function createOciProvider(options: OciProviderOptions = {}): OciProvider
       };
     }
 
+    if (intended.bootVolumeGb < MIN_BOOT_VOLUME_GB) {
+      return {
+        status: "blocked",
+        blockers: [
+          {
+            code: "boot-size",
+            message: `boot volume ${intended.bootVolumeGb} GB is below the CLI minimum of ${MIN_BOOT_VOLUME_GB} GB`,
+          },
+        ],
+        partial: [],
+        account: report.account,
+        inventory: report.inventory,
+      };
+    }
+    if (!report.image) {
+      return {
+        status: "blocked",
+        blockers: [
+          {
+            code: "image-ineligible",
+            message: "no verified AVAILABLE platform A1 image; refusing to create",
+          },
+        ],
+        partial: [],
+        account: report.account,
+        inventory: report.inventory,
+      };
+    }
+
     const confirmed = request.confirm
       ? await request.confirm("create-a1", {
           intended,
+          image: report.image,
           plannedWrites: report.plannedWrites,
           evidence: report.account.evidence,
         })
@@ -464,21 +535,7 @@ export function createOciProvider(options: OciProviderOptions = {}): OciProvider
       };
     }
 
-    const image = await resolveEligibleImage(exec, tenancyId, region);
-    if (!image) {
-      return {
-        status: "blocked",
-        blockers: [
-          {
-            code: "image-ineligible",
-            message: "no verified Always Free-eligible A1 image in the home region",
-          },
-        ],
-        partial,
-        account: report.account,
-        inventory: report.inventory,
-      };
-    }
+    const image = report.image;
 
     const ads = report.inventory.availabilityDomains.length > 0
       ? report.inventory.availabilityDomains
@@ -945,7 +1002,7 @@ async function buildEligibility(
   if (bootVolumeGb < MIN_BOOT_VOLUME_GB) {
     pushBlocker(blockers, {
       code: "boot-size",
-      message: `boot volume ${bootVolumeGb} GB is below the documented Always Free minimum of ${MIN_BOOT_VOLUME_GB} GB`,
+      message: `boot volume ${bootVolumeGb} GB is below the CLI launch minimum of ${MIN_BOOT_VOLUME_GB} GB`,
     });
   }
 
@@ -960,6 +1017,7 @@ async function buildEligibility(
     if (!discovered.inventory.attachmentsKnown) return liveInstanceIds.size === 0;
     return true;
   });
+  // storageGb is boot+block only; backup slots are separate and are not inventoried.
   const remainingStorage = ALWAYS_FREE_STORAGE_GB - discovered.inventory.storageGb;
   if (remainingStorage < bootVolumeGb) {
     pushBlocker(blockers, {
@@ -974,13 +1032,16 @@ async function buildEligibility(
     });
   }
 
+  let selectedImage: SelectedImage | undefined;
   if (discovered.account.tenancyId && homeRegion && discovered.inventory.failedQueries.length === 0) {
-    const image = await resolveEligibleImage(exec, discovered.account.tenancyId, homeRegion);
-    if (!image) {
+    const resolved = await resolveEligibleImage(exec, discovered.account.tenancyId, homeRegion);
+    if (!resolved.ok) {
       pushBlocker(blockers, {
         code: "image-ineligible",
-        message: "no permitted Always Free-eligible A1 image could be verified",
+        message: resolved.reason,
       });
+    } else {
+      selectedImage = resolved.image;
     }
     const ownership = await networkOwnershipBlocker(exec, discovered.account.tenancyId, homeRegion, displayName);
     if (ownership) pushBlocker(blockers, ownership);
@@ -991,6 +1052,7 @@ async function buildEligibility(
     blockers,
     account: discovered.account,
     inventory: discovered.inventory,
+    image: selectedImage,
     plannedWrites,
     intended: homeRegion
       ? {
@@ -1001,6 +1063,8 @@ async function buildEligibility(
           bootVolumeGb,
           sshCidr: request.publicSshCidr,
           displayName,
+          imageId: selectedImage?.id,
+          imageName: selectedImage?.displayName,
         }
       : undefined,
   };
@@ -1045,7 +1109,8 @@ async function resolveEligibleImage(
   exec: (parts: readonly string[], region?: string) => Promise<CommandResult>,
   tenancyId: string,
   region: string,
-): Promise<{ id: string; operatingSystem: string; displayName: string } | undefined> {
+): Promise<{ ok: true; image: SelectedImage } | { ok: false; reason: string }> {
+  let sawMissingPlatformKey = false;
   for (const operatingSystem of ["Canonical Ubuntu", "Ubuntu", "Oracle Linux", "Oracle Linux Cloud Developer"]) {
     const listed = await readJson(
       exec(
@@ -1059,6 +1124,8 @@ async function resolveEligibleImage(
           operatingSystem,
           "--shape",
           A1_SHAPE,
+          "--lifecycle-state",
+          "AVAILABLE",
           "--sort-by",
           "TIMECREATED",
           "--sort-order",
@@ -1067,17 +1134,36 @@ async function resolveEligibleImage(
         region,
       ),
     );
-    if (!listed.ok) continue;
+    if (!listed.ok) {
+      return { ok: false, reason: `image list failed: ${listed.error}` };
+    }
     for (const item of ociItems(listed.value)) {
+      if (!hasCliKey(item, "compartment_id")) {
+        sawMissingPlatformKey = true;
+        continue;
+      }
       const id = asString(cliValue(item, "id"));
       const os = asString(cliValue(item, "operating_system")) ?? operatingSystem;
       const displayName = asString(cliValue(item, "display_name")) ?? "";
-      if (id && isAlwaysFreeEligibleA1Image({ operatingSystem: os, displayName })) {
-        return { id, operatingSystem: os, displayName };
+      if (
+        id &&
+        isAvailablePlatformImage(item) &&
+        isAlwaysFreeEligibleA1Image({ operatingSystem: os, displayName })
+      ) {
+        return { ok: true, image: { id, displayName, operatingSystem: os } };
       }
     }
   }
-  return undefined;
+  if (sawMissingPlatformKey) {
+    return {
+      ok: false,
+      reason: "platform vs custom image distinction unavailable (compartment-id key missing); refusing custom images",
+    };
+  }
+  return {
+    ok: false,
+    reason: "no AVAILABLE platform A1 image with official Always Free-eligible OS and compartment-id null",
+  };
 }
 
 async function networkOwnershipBlocker(
@@ -1086,30 +1172,42 @@ async function networkOwnershipBlocker(
   region: string,
   displayName: string,
 ): Promise<Blocker | undefined> {
-  const listed = await readJson(
-    exec(
-      ["network", "vcn", "list", "--compartment-id", tenancyId, "--display-name", `${displayName}-vcn`, "--all"],
-      region,
-    ),
+  const vcnName = `${displayName}-vcn`;
+  const vcn = await findNamed(
+    exec,
+    ["network", "vcn", "list", "--compartment-id", tenancyId, "--display-name", vcnName, "--all"],
+    region,
   );
-  if (!listed.ok) {
-    return { code: "failed-inventory", message: `vcn list failed: ${listed.error}` };
-  }
-  const vcns = ociItems(listed.value).filter((item) => {
-    const state = asString(cliValue(item, "lifecycle_state")) ?? "";
-    return isLiveLifecycle(state);
-  });
-  if (vcns.length === 0) return undefined;
-  if (vcns.length > 1) {
-    return { code: "ownership", message: `multiple VCNs named ${displayName}-vcn; refusing to guess` };
-  }
-  const tags = asRecord(cliValue(vcns[0], "freeform_tags")) ?? {};
-  const managedBy = asString(tags["managed-by"] ?? tags.managedBy ?? tags.managed_by);
-  if (managedBy !== MANAGED_BY) {
-    return {
-      code: "ownership",
-      message: `existing VCN ${displayName}-vcn is not tagged managed-by=${MANAGED_BY}`,
-    };
+  const vcnBlocker = namedOwnershipBlocker(vcn, "vcn", vcnName);
+  if (vcnBlocker) return vcnBlocker;
+  if (vcn.status !== "found") return undefined;
+
+  const children: Array<{ kind: string; name: string; parts: string[] }> = [
+    {
+      kind: "internet-gateway",
+      name: `${displayName}-igw`,
+      parts: ["network", "internet-gateway", "list", "--compartment-id", tenancyId, "--vcn-id", vcn.id, "--display-name", `${displayName}-igw`, "--all"],
+    },
+    {
+      kind: "security-list",
+      name: `${displayName}-sl`,
+      parts: ["network", "security-list", "list", "--compartment-id", tenancyId, "--vcn-id", vcn.id, "--display-name", `${displayName}-sl`, "--all"],
+    },
+    {
+      kind: "nsg",
+      name: `${displayName}-nsg`,
+      parts: ["network", "nsg", "list", "--compartment-id", tenancyId, "--vcn-id", vcn.id, "--display-name", `${displayName}-nsg`, "--all"],
+    },
+    {
+      kind: "subnet",
+      name: `${displayName}-subnet`,
+      parts: ["network", "subnet", "list", "--compartment-id", tenancyId, "--vcn-id", vcn.id, "--display-name", `${displayName}-subnet`, "--all"],
+    },
+  ];
+  for (const child of children) {
+    const found = await findNamed(exec, child.parts, region);
+    const blocker = namedOwnershipBlocker(found, child.kind, child.name);
+    if (blocker) return blocker;
   }
   return undefined;
 }
@@ -1144,10 +1242,9 @@ async function ensureNetwork(
     ["network", "vcn", "list", "--compartment-id", input.tenancyId, "--display-name", vcnName, "--all"],
     input.region,
   );
-  let vcnId = existingVcn?.id;
-  if (existingVcn && existingVcn.managedBy !== MANAGED_BY) {
-    return { ok: false, blockers: [{ code: "ownership", message: `will not mutate foreign VCN ${vcnName}` }] };
-  }
+  const vcnLookup = namedOwnershipBlocker(existingVcn, "vcn", vcnName);
+  if (vcnLookup) return { ok: false, blockers: [vcnLookup] };
+  let vcnId = existingVcn.status === "found" ? existingVcn.id : undefined;
   if (!vcnId) {
     const created = await readJson(
       exec(
@@ -1185,7 +1282,9 @@ async function ensureNetwork(
     ["network", "internet-gateway", "list", "--compartment-id", input.tenancyId, "--vcn-id", vcnId, "--display-name", igwName, "--all"],
     input.region,
   );
-  let igwId = existingIgw?.id;
+  const igwLookup = namedOwnershipBlocker(existingIgw, "internet-gateway", igwName);
+  if (igwLookup) return { ok: false, blockers: [igwLookup] };
+  let igwId = existingIgw.status === "found" ? existingIgw.id : undefined;
   if (!igwId) {
     const created = await readJson(
       exec(
@@ -1217,23 +1316,30 @@ async function ensureNetwork(
   }
 
   const vcn = await readJson(exec(["network", "vcn", "get", "--vcn-id", vcnId], input.region));
-  const defaultRt = vcn.ok ? asString(cliValue(asRecord(unwrapData(vcn.value)) ?? {}, "default_route_table_id")) : undefined;
-  if (defaultRt && igwId) {
-    await readJson(
-      exec(
-        [
-          "network",
-          "route-table",
-          "update",
-          "--rt-id",
-          defaultRt,
-          "--route-rules",
-          JSON.stringify([{ cidrBlock: "0.0.0.0/0", networkEntityId: igwId, description: "internet via IGW" }]),
-          "--force",
-        ],
-        input.region,
-      ),
-    );
+  if (!vcn.ok) {
+    return { ok: false, blockers: [{ code: "failed-inventory", message: `vcn get failed: ${vcn.error}` }] };
+  }
+  const defaultRt = asString(cliValue(asRecord(unwrapData(vcn.value)) ?? {}, "default_route_table_id"));
+  if (!defaultRt || !igwId) {
+    return { ok: false, blockers: [{ code: "failed-inventory", message: "could not resolve default route table for IGW route" }] };
+  }
+  const routed = await readJson(
+    exec(
+      [
+        "network",
+        "route-table",
+        "update",
+        "--rt-id",
+        defaultRt,
+        "--route-rules",
+        JSON.stringify([{ cidrBlock: "0.0.0.0/0", networkEntityId: igwId, description: "internet via IGW" }]),
+        "--force",
+      ],
+      input.region,
+    ),
+  );
+  if (!routed.ok) {
+    return { ok: false, blockers: [{ code: "permissions", message: `route-table update failed: ${routed.error}` }] };
   }
 
   const existingSl = await findNamed(
@@ -1241,7 +1347,9 @@ async function ensureNetwork(
     ["network", "security-list", "list", "--compartment-id", input.tenancyId, "--vcn-id", vcnId, "--display-name", slName, "--all"],
     input.region,
   );
-  let slId = existingSl?.id;
+  const slLookup = namedOwnershipBlocker(existingSl, "security-list", slName);
+  if (slLookup) return { ok: false, blockers: [slLookup] };
+  let slId = existingSl.status === "found" ? existingSl.id : undefined;
   if (!slId) {
     const created = await readJson(
       exec(
@@ -1279,7 +1387,9 @@ async function ensureNetwork(
     ["network", "nsg", "list", "--compartment-id", input.tenancyId, "--vcn-id", vcnId, "--display-name", nsgName, "--all"],
     input.region,
   );
-  let nsgId = existingNsg?.id;
+  const nsgLookup = namedOwnershipBlocker(existingNsg, "nsg", nsgName);
+  if (nsgLookup) return { ok: false, blockers: [nsgLookup] };
+  let nsgId = existingNsg.status === "found" ? existingNsg.id : undefined;
   if (!nsgId) {
     const created = await readJson(
       exec(
@@ -1345,7 +1455,9 @@ async function ensureNetwork(
     ["network", "subnet", "list", "--compartment-id", input.tenancyId, "--vcn-id", vcnId, "--display-name", subnetName, "--all"],
     input.region,
   );
-  let subnetId = existingSubnet?.id;
+  const subnetLookup = namedOwnershipBlocker(existingSubnet, "subnet", subnetName);
+  if (subnetLookup) return { ok: false, blockers: [subnetLookup] };
+  let subnetId = existingSubnet.status === "found" ? existingSubnet.id : undefined;
   if (!subnetId) {
     const created = await readJson(
       exec(
@@ -1451,20 +1563,41 @@ function isCapacityError(message: string): boolean {
   return /outofhostcapacity|out of host capacity/i.test(message);
 }
 
+type FindNamedResult =
+  | { status: "missing" }
+  | { status: "found"; id: string; managedBy?: string }
+  | { status: "error"; error: string }
+  | { status: "ambiguous"; count: number };
+
 async function findNamed(
   exec: (parts: readonly string[], region?: string) => Promise<CommandResult>,
   parts: readonly string[],
   region: string,
-): Promise<{ id: string; managedBy?: string } | undefined> {
+): Promise<FindNamedResult> {
   const listed = await readJson(exec(parts, region));
-  if (!listed.ok) return undefined;
+  if (!listed.ok) return { status: "error", error: listed.error };
   const live = ociItems(listed.value).filter((item) => isLiveLifecycle(asString(cliValue(item, "lifecycle_state")) ?? "AVAILABLE"));
-  if (live.length !== 1) return undefined;
+  if (live.length === 0) return { status: "missing" };
+  if (live.length !== 1) return { status: "ambiguous", count: live.length };
   const tags = asRecord(cliValue(live[0], "freeform_tags")) ?? {};
   return {
+    status: "found",
     id: asString(cliValue(live[0], "id")) ?? "",
     managedBy: asString(tags["managed-by"] ?? tags.managedBy ?? tags.managed_by),
   };
+}
+
+function namedOwnershipBlocker(result: FindNamedResult, kind: string, name: string): Blocker | undefined {
+  if (result.status === "error") {
+    return { code: "failed-inventory", message: `${kind} list failed: ${result.error}` };
+  }
+  if (result.status === "ambiguous") {
+    return { code: "ownership", message: `multiple ${kind}s named ${name}; refusing to guess` };
+  }
+  if (result.status === "found" && result.managedBy !== MANAGED_BY) {
+    return { code: "ownership", message: `existing ${kind} ${name} is not tagged managed-by=${MANAGED_BY}` };
+  }
+  return undefined;
 }
 
 function dnsLabel(displayName: string, suffix: string): string {
