@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -30,6 +31,16 @@ import { formatCreateConfirmation, formatStartupFailure, resolveCloudRun, runClo
 import { CLOUD_INIT_CONSOLE } from "./fixtures.ts";
 
 const TENANCY = "ocid1.tenancy.oc1..aaaa";
+const OCI_CONFIG = join(mkdtempSync(join(tmpdir(), "pi-cloud-setup-oci-")), "config");
+writeFileSync(
+  OCI_CONFIG,
+  `[PI_CLOUD]\ntenancy=${TENANCY}\nregion=eu-frankfurt-1\nsecurity_token_file=/tmp/not-read\n`,
+);
+
+function mockedOciProvider(options: { run: CommandRunner }) {
+  return createOciProvider({ configFile: OCI_CONFIG, run: options.run });
+}
+
 const HOME = "eu-frankfurt-1";
 const AD = "eu-frankfurt-1-ad-1";
 const IMAGE = "ocid1.image.oc1..ubuntu";
@@ -67,9 +78,7 @@ function fail(message: string): CommandResult {
 }
 
 function regionSubscriptions(): CommandResult {
-  return ok([
-    { "is-home-region": true, "region-name": HOME, "tenancy-id": TENANCY },
-  ]);
+  return ok([{ "is-home-region": true, "region-name": HOME }]);
 }
 
 function liveManaged(): Record<string, unknown> {
@@ -89,7 +98,15 @@ function baseOciHandlers(overrides: Handlers = {}): Handlers {
   return {
     "iam region-subscription list": () => regionSubscriptions(),
     "osp-gateway subscription-service subscription list": () => ok({ items: [{ id: "sub-1", "plan-type": "FREE_TIER" }] }),
-    "iam compartment list": () => ok([]),
+    "iam compartment list": () =>
+      ok([
+        {
+          id: TENANCY,
+          name: "root",
+          "lifecycle-state": "ACTIVE",
+          "compartment-id": null,
+        },
+      ]),
     "iam availability-domain list": () => ok([{ name: AD }]),
     "compute instance list": () => ok([]),
     "bv boot-volume list": () => ok([]),
@@ -301,7 +318,7 @@ async function harness(options: {
     if (!handler) return fail(`unexpected command: ${key}`);
     return await handler(parsed);
   };
-  const oci = createOciProvider({ run });
+  const oci = mockedOciProvider({ run });
   const remote = createRemoteTransport({
     run,
     knownHostsDir,
@@ -456,7 +473,7 @@ test("create without a public IP saves the host and does not launch twice", asyn
     ui: mockUi({ confirm: true, input: [SSH_CIDR] }),
     runtime: {
       run,
-      oci: createOciProvider({ run }),
+      oci: mockedOciProvider({ run }),
       remote: createRemoteTransport({ run, knownHostsDir, randomId: () => "sess09" }),
       stateDir,
       knownHostsDir,
@@ -496,7 +513,7 @@ test("saved host resumes without launching another instance", async () => {
     ui: mockUi({ confirm: false }),
     runtime: {
       run,
-      oci: createOciProvider({ run }),
+      oci: mockedOciProvider({ run }),
       remote: createRemoteTransport({ run, knownHostsDir, randomId: () => "sess02" }),
       stateDir: first.stateDir,
       knownHostsDir,
@@ -568,7 +585,7 @@ test("default startup without runtime.run adopts using injected seams, not a mis
     branch: "main",
     ui: mockUi({ confirm: false }),
     runtime: {
-      oci: createOciProvider({ run: ociRun }),
+      oci: mockedOciProvider({ run: ociRun }),
       remote: createRemoteTransport({ run: remoteRun, knownHostsDir, randomId: () => "sess01" }),
       stateDir,
       knownHostsDir,
@@ -658,7 +675,7 @@ test("missing-tool start shows the exact remote install hint", async () => {
     branch: "main",
     ui: mockUi({ confirm: false }),
     runtime: {
-      oci: createOciProvider({ run: ociRun }),
+      oci: mockedOciProvider({ run: ociRun }),
       remote,
       stateDir,
       knownHostsDir,
@@ -747,7 +764,7 @@ test("concurrent first-run create takes the exclusive setup lock", async () => {
     };
     return {
       run,
-      oci: createOciProvider({ run }),
+      oci: mockedOciProvider({ run }),
       remote: createRemoteTransport({ run, knownHostsDir, randomId: () => sessionId, registry: createMemoryRegistry() }),
       stateDir,
       knownHostsDir,
