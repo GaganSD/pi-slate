@@ -206,7 +206,7 @@ async function ensureAuthenticated(
     "OCI authentication required",
     [
       `Pi Cloud uses the browser session profile ${OCI_PROFILE} (security_token).`,
-      "The CLI stores that token; this package does not read ~/.oci secrets.",
+      "This package reads only the non-secret tenancy OCID from the PI_CLOUD profile in the OCI CLI config. The CLI alone handles key/token file contents. Credentials are not copied to the VM.",
       first.evidence ? `Current session: ${first.evidence}` : "No authenticated PI_CLOUD session.",
       "Authenticate in a browser now?",
     ].join("\n"),

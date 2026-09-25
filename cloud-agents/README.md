@@ -34,7 +34,7 @@ Detaching from tmux leaves remote Pi running. `pi --cloud` is the reattach path.
 
 ## First-run setup
 
-1. Browser-authenticate the OCI CLI profile **`PI_CLOUD`** (`security_token`). The CLI holds the token; this package does not read `~/.oci` secrets.
+1. Browser-authenticate the OCI CLI profile **`PI_CLOUD`** (`security_token`). Pi Cloud reads only the non-secret `tenancy` OCID from that profile in the OCI CLI config (`OCI_CLI_CONFIG_FILE` or `~/.oci/config`). The CLI alone handles key/token file contents. Those secrets are not copied to the VM.
 2. Show the account and home region. Adopt an existing approved A1 host when one matches.
 3. Create a free-only A1 VM only after an eligibility report and explicit confirmation. `FREE_TIER` includes trial accounts and is not a blanket Always Free proof; eligibility is independently bounded. The confirm dialog names the verified platform image and OCID. Failed free allocation never becomes paid.
 4. Pin the guest Ubuntu sshd host key from independently authenticated **cloud-init console-history** before any SSH command. Serial-console service keys are refused. If enrollment cannot be done safely, setup stays blocked and never uses `accept-new`.
