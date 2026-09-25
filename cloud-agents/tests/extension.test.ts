@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { spawnCommand } from "../src/oci.ts";
 import { handleCloudFlag, registerCloudExtension } from "../src/index.ts";
+import { resolveCloudRun } from "../src/setup.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -108,6 +110,25 @@ test("README documents local install and PI_CLOUD browser auth", async () => {
   assert.match(readme, /--branch/);
   assert.match(readme, /22\.19/);
   assert.match(readme, /remote default HEAD/);
+});
+
+test("/cloud default runner is resolveCloudRun, not undefined", async () => {
+  assert.equal(resolveCloudRun(undefined), spawnCommand);
+  assert.equal(resolveCloudRun({}), spawnCommand);
+  const fake = fakePi();
+  const gitCalls: string[][] = [];
+  const stateDir = await mkdtemp(join(tmpdir(), "pi-cloud-ext-"));
+  registerCloudExtension(fake.pi as never, {
+    stateDir,
+    run: async (argv) => {
+      gitCalls.push([...argv]);
+      return { code: 1, stdout: "", stderr: "offline fixture" };
+    },
+  });
+  fake.ctx.cwd = "/home/ubuntu/pi-cloud/sessions/sess01/work";
+  await fake.commands.cloud.handler("", fake.ctx);
+  assert.equal(gitCalls.some((argv) => argv[0] === "git"), true);
+  assert.doesNotMatch(fake.notifies.join("\n"), /\bidle\b/);
 });
 
 test("thrown startup still shuts down local Pi", async () => {

@@ -26,7 +26,7 @@ import {
   sshArgvIsSecure,
 } from "../src/remote.ts";
 import { identityPath, loadState, saveState, setupLockPath, acquireExclusiveLock } from "../src/state.ts";
-import { formatCreateConfirmation, resolveCloudRun, runCloudStartup, type CloudUi } from "../src/setup.ts";
+import { formatCreateConfirmation, formatStartupFailure, resolveCloudRun, runCloudStartup, type CloudUi } from "../src/setup.ts";
 import { CLOUD_INIT_CONSOLE } from "./fixtures.ts";
 
 const TENANCY = "ocid1.tenancy.oc1..aaaa";
@@ -577,6 +577,101 @@ test("default startup without runtime.run adopts using injected seams, not a mis
   assert.equal(outcome.status, "ready", outcome.status === "blocked" ? outcome.blockers.map((b) => b.message).join("; ") : "");
   assert.equal(log.length, 0);
   void injected;
+});
+
+test("missing-tool start shows the exact remote install hint", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "pi-cloud-state-"));
+  const knownHostsDir = await mkdtemp(join(tmpdir(), "pi-cloud-kh-"));
+  await seedIdentity(stateDir);
+  await saveState(stateDir, {
+    version: 1,
+    setupStep: "ready",
+    identityFile: identityPath(stateDir),
+    sshPublicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIlocalfixture pi-cloud",
+    host: {
+      id: "inst-adoptme0001",
+      ocid: INSTANCE_ID,
+      address: PUBLIC_IP,
+      user: "ubuntu",
+      expectedHostKey: HOST_KEY,
+      displayName: DEFAULT_DISPLAY_NAME,
+      compartmentId: TENANCY,
+      region: HOME,
+    },
+    sessions: [],
+  });
+  const ociHandlers = baseOciHandlers({
+    "compute instance list": () => ok([liveManaged()]),
+  });
+  const ociRun: CommandRunner = async (argv) => {
+    const parsed = parseArgv(argv);
+    const handler = ociHandlers[parsed.tokens.join(" ")];
+    return handler ? await handler(parsed) : fail(parsed.tokens.join(" "));
+  };
+  const remote = {
+    async pinHostKey(enrollment: { host: { id: string; address: string; user: string; expectedHostKey?: string } }) {
+      return {
+        ok: true as const,
+        pinned: {
+          host: {
+            id: enrollment.host.id,
+            address: enrollment.host.address,
+            user: enrollment.host.user,
+            expectedHostKey: enrollment.host.expectedHostKey ?? HOST_KEY,
+          },
+          knownHostsPath: join(knownHostsDir, "vm.known_hosts"),
+          aliases: [enrollment.host.address],
+          source: "cloud-init-console-history" as const,
+        },
+      };
+    },
+    async selectRepo() {
+      return {
+        ok: true as const,
+        repo: "https://github.com/acme/proj.git",
+        baseBranch: "main",
+        workingBranch: "pi/sess01",
+        inferred: false,
+      };
+    },
+    async start() {
+      return {
+        status: "blocked" as const,
+        blockers: [
+          {
+            code: "missing-tool" as const,
+            message: "remote node is missing; install Node.js >= 22.19 on the VM",
+          },
+        ],
+      };
+    },
+    async attach() {
+      return { status: "blocked" as const, blockers: [] };
+    },
+    async inspect() {
+      return { blockers: [], connection: "ok" as const };
+    },
+  };
+  const outcome = await runCloudStartup({
+    cwd: stateDir,
+    repo: "acme/proj",
+    branch: "main",
+    ui: mockUi({ confirm: false }),
+    runtime: {
+      oci: createOciProvider({ run: ociRun }),
+      remote,
+      stateDir,
+      knownHostsDir,
+      run: ociRun,
+    },
+  });
+  assert.equal(outcome.status, "blocked");
+  if (outcome.status === "blocked") {
+    assert.equal(outcome.blockers.some((blocker) => blocker.code === "missing-tool"), true);
+    assert.match(outcome.next ?? "", /Install Node\.js >= 22\.19/);
+    assert.match(formatStartupFailure(outcome), /Install Node\.js >= 22\.19/);
+    assert.match(formatStartupFailure(outcome), /npm install -g @earendil-works\/pi-coding-agent/);
+  }
 });
 
 test("corrupt existing state fails closed and does not create", async () => {

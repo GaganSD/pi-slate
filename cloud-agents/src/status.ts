@@ -93,26 +93,39 @@ function inspectLocalStatus(query: StatusQuery): CloudStatus {
   };
 }
 
+export function sessionIdFromCloudPath(cwd: string): string | undefined {
+  const match = cwd.replaceAll("\\", "/").match(/\/pi-cloud\/sessions\/([^/]+)/);
+  return match?.[1];
+}
+
 async function inspectRemoteStatus(query: StatusQuery): Promise<CloudStatus> {
   const git = query.run ? await readGit(query.run, query.cwd) : undefined;
+  const sessionId = query.sessionId ?? sessionIdFromCloudPath(query.cwd);
+  const recorded =
+    query.live ??
+    query.persisted?.sessions.find((session) => session.id === sessionId || session.piSession === sessionId);
   const notes = [
     "Remote `/cloud` is read-only status.",
     "Sign in to the model provider on this VM; local laptop credentials are not copied.",
   ];
-  if (git?.ahead === "unknown" || git?.origin === undefined) {
+  if (git?.ahead === "unknown" || (git?.origin === undefined && !recorded?.repo)) {
     notes.push("Git state is unknown.");
+  }
+  if (!git?.baseBranch && !recorded?.baseBranch) {
+    notes.push("Base branch is unknown without @{upstream} or a saved session record.");
   }
   return {
     mode: "remote",
     host: hostname() || "unknown",
     connection: "ok",
-    repo: git?.origin,
+    repo: git?.origin ?? recorded?.repo,
     path: query.cwd,
-    baseBranch: git?.baseBranch,
-    workingBranch: git?.branch,
-    piSession: query.sessionId ?? query.sessionName ?? "unknown",
+    baseBranch: git?.baseBranch ?? recorded?.baseBranch,
+    workingBranch: git?.branch ?? recorded?.workingBranch,
+    piSession: sessionId ?? query.sessionName ?? recorded?.piSession ?? "unknown",
+    tmuxSession: recorded?.tmuxSession,
     subagentRuns: "unknown",
-    commitsOnlyLocal: git?.ahead === "unknown" ? "unknown" : Boolean(git?.ahead),
+    commitsOnlyLocal: git?.ahead === "unknown" || git?.ahead === undefined ? "unknown" : git.ahead,
     notes,
   };
 }

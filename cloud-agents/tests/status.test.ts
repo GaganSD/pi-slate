@@ -32,6 +32,55 @@ test("remote status reports unknown git honestly and never says idle", async () 
   assert.doesNotMatch(text, /\bidle\b/);
 });
 
+test("remote /cloud uses a saved session base branch when @{upstream} is missing", async () => {
+  const status = await inspectCloudStatus({
+    cwd: "/home/ubuntu/pi-cloud/sessions/sess01/work",
+    run: async (argv: readonly string[]) => {
+      const key = argv.join(" ");
+      if (key.includes("remote get-url")) return { code: 0, stdout: "https://github.com/acme/proj.git\n", stderr: "" };
+      if (key.includes("branch --show-current")) return { code: 0, stdout: "pi/sess01\n", stderr: "" };
+      if (key.includes("@{upstream}")) return { code: 1, stdout: "", stderr: "no upstream" };
+      return { code: 1, stdout: "", stderr: key };
+    },
+    persisted: {
+      version: 1,
+      setupStep: "ready",
+      sessions: [
+        {
+          id: "sess01",
+          hostId: "inst-1",
+          repo: "https://github.com/acme/proj.git",
+          baseBranch: "release",
+          workingBranch: "pi/sess01",
+          tmuxSession: "pi-sess01",
+          remotePath: "/home/ubuntu/pi-cloud/sessions/sess01/work",
+          piSession: "sess01",
+          status: "running",
+          worktreesOwnedBy: "subagents",
+        },
+      ],
+    },
+  });
+  assert.equal(status.baseBranch, "release");
+  assert.equal(status.workingBranch, "pi/sess01");
+});
+
+test("remote /cloud keeps base branch unknown without upstream or saved session", async () => {
+  const status = await inspectCloudStatus({
+    cwd: "/home/ubuntu/pi-cloud/sessions/sess01/work",
+    sessionId: "sess01",
+    run: async (argv: readonly string[]) => {
+      const key = argv.join(" ");
+      if (key.includes("remote get-url")) return { code: 0, stdout: "https://github.com/acme/proj.git\n", stderr: "" };
+      if (key.includes("branch --show-current")) return { code: 0, stdout: "pi/sess01\n", stderr: "" };
+      if (key.includes("@{upstream}")) return { code: 1, stdout: "", stderr: "no upstream" };
+      return { code: 1, stdout: "", stderr: key };
+    },
+  });
+  assert.equal(status.baseBranch, undefined);
+  assert.match(formatCloudStatus(status), /Base branch is unknown/);
+});
+
 test("remote status can see unpushed commits as local-only", async () => {
   const status = await inspectCloudStatus({
     cwd: "/home/ubuntu/pi-cloud/sessions/sess01/work",

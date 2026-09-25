@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { spawnInherit } from "./util.ts";
 import {
   formatStartupFailure,
+  resolveCloudRun,
   runCloudStartup,
   type CloudRuntime,
   type StartupOutcome,
@@ -39,7 +40,7 @@ export function registerCloudExtension(pi: ExtensionAPI, runtime: CloudRuntime =
       }
       const status = await inspectCloudStatus({
         cwd: ctx.cwd,
-        run: runtime.run,
+        run: resolveCloudRun(runtime),
         sessionId: ctx.sessionManager.getSessionId(),
         sessionName: ctx.sessionManager.getSessionName(),
         persisted,

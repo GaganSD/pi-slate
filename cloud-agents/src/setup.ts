@@ -505,7 +505,11 @@ async function ensureSession(
     identityFile: state.identityFile,
   });
   if (started.status !== "started") {
-    const missingTools = started.blockers.some((blocker) => /pi|tmux|git|not found|command not found/i.test(blocker.message));
+    const missingTools = started.blockers.some(
+      (blocker) =>
+        blocker.code === "missing-tool" ||
+        /pi|tmux|git|not found|command not found/i.test(blocker.message),
+    );
     return blockedList(
       started.blockers,
       missingTools
