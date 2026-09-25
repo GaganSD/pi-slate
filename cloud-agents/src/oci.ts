@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-/** Browser-session profile. The CLI holds the token; this module never reads ~/.oci secrets. */
+/** PI_CLOUD security_token profile. Reads only the non-secret tenancy OCID from that config section; never token or key files. */
 export const OCI_PROFILE = "PI_CLOUD";
 export const OCI_AUTH = "security_token";
 
@@ -835,7 +835,6 @@ async function loadInventory(
   region: string,
 ): Promise<InventorySnapshot> {
   const inventory = emptyInventory();
-  inventory.compartments = [tenancyId];
 
   const compartments = await readJson(
     exec(
@@ -851,6 +850,7 @@ async function loadInventory(
         "ANY",
         "--lifecycle-state",
         "ACTIVE",
+        "--include-root",
         "--all",
       ],
       region,
@@ -860,11 +860,16 @@ async function loadInventory(
     inventory.failedQueries.push(`compartment list: ${compartments.error}`);
     return inventory;
   }
+  const listedIds: string[] = [];
   for (const item of ociItems(compartments.value)) {
     const id = asString(cliValue(item, "id"));
-    if (id) inventory.compartments.push(id);
+    if (id) listedIds.push(id);
   }
-  inventory.compartments = [...new Set(inventory.compartments)];
+  if (!listedIds.includes(tenancyId)) {
+    inventory.failedQueries.push("compartment list did not include the tenancy root");
+    return inventory;
+  }
+  inventory.compartments = [...new Set(listedIds)];
 
   inventory.availabilityDomains = await listAvailabilityDomains(exec, tenancyId, region);
   if (inventory.availabilityDomains.length === 0) {

@@ -101,7 +101,15 @@ function baseHandlers(overrides: Handlers = {}): Handlers {
   return {
     "iam region-subscription list": () => regionSubscriptions(),
     "osp-gateway subscription-service subscription list": () => subscriptions("FREE_TIER"),
-    "iam compartment list": () => ok([]),
+    "iam compartment list": () =>
+      ok([
+        {
+          id: TENANCY,
+          name: "root",
+          "lifecycle-state": "ACTIVE",
+          "compartment-id": null,
+        },
+      ]),
     "iam availability-domain list": () => ok([{ name: AD }]),
     "compute instance list": () => ok([]),
     "bv boot-volume list": () => ok([]),
@@ -783,4 +791,59 @@ test("missing home region fails closed", async () => {
   const account = await provider.preflight();
   assert.equal(account.authenticated, false);
   assert.match(account.evidence, /no home region/);
+});
+
+test("compartment inventory requires --include-root and the exact tenancy root", async () => {
+  const log: string[][] = [];
+  const provider = ociProvider({ run: fakeRunner({}, log) });
+  const report = await provider.evaluateCreate(request());
+  assert.equal(report.inventory.compartments.includes(TENANCY), true);
+  assert.equal(report.inventory.failedQueries.length, 0);
+  const listed = log.find((argv) => argv.includes("compartment") && argv.includes("list"));
+  assert.ok(listed);
+  assert.equal(listed.includes("--include-root"), true);
+});
+
+test("empty compartment-list stdout is not treated as an empty array", async () => {
+  const provider = ociProvider({
+    run: fakeRunner({
+      "iam compartment list": () => ({ code: 0, stdout: "", stderr: "" }),
+    }),
+  });
+  const report = await provider.evaluateCreate(request());
+  assert.equal(report.eligible, false);
+  assert.equal(report.blockers.some((blocker) => blocker.code === "failed-inventory"), true);
+  assert.match(report.inventory.failedQueries.join(" "), /empty CLI stdout/);
+  assert.equal(report.inventory.compartments.includes(TENANCY), false);
+});
+
+test("compartment list missing the tenancy root fails closed", async () => {
+  const provider = ociProvider({
+    run: fakeRunner({
+      "iam compartment list": () => ok([]),
+    }),
+  });
+  const report = await provider.evaluateCreate(request());
+  assert.equal(report.eligible, false);
+  assert.equal(report.blockers.some((blocker) => blocker.code === "failed-inventory"), true);
+  assert.match(report.inventory.failedQueries.join(" "), /tenancy root/);
+});
+
+test("compartment list with an unexpected root id fails closed", async () => {
+  const provider = ociProvider({
+    run: fakeRunner({
+      "iam compartment list": () =>
+        ok([
+          {
+            id: "ocid1.compartment.oc1..child",
+            name: "child",
+            "lifecycle-state": "ACTIVE",
+          },
+        ]),
+    }),
+  });
+  const report = await provider.evaluateCreate(request());
+  assert.equal(report.eligible, false);
+  assert.equal(report.inventory.compartments.includes(TENANCY), false);
+  assert.match(report.inventory.failedQueries.join(" "), /tenancy root/);
 });
