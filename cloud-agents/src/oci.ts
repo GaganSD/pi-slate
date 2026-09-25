@@ -73,7 +73,9 @@ export type AccountSnapshot = {
   tenancyId?: string;
   homeRegion?: string;
   billingPlan: BillingPlan;
-  subscriptions: Array<{ id?: string; planType?: string }>;
+  /** OSP Gateway list access. Absent/ambiguous permissions deny create. */
+  subscriptionAccess: "ok" | "denied" | "unknown";
+  subscriptions: Array<{ id?: string; planType?: string; accountType?: string }>;
   evidence: string;
 };
 
@@ -199,6 +201,10 @@ export function cliValue(obj: Record<string, unknown>, snake: string): unknown {
   return undefined;
 }
 
+/**
+ * Billing plan comes only from OSP Gateway plan-type / planType.
+ * account-type PERSONAL|CORPORATE is not a billing plan and is ignored.
+ */
 export function classifySubscriptions(items: Array<Record<string, unknown>>): {
   plan: BillingPlan;
   reason: string;
@@ -224,6 +230,42 @@ export function classifySubscriptions(items: Array<Record<string, unknown>>): {
     return { plan: "unknown", reason: "mixed FREE_TIER and PAYG subscriptions" };
   }
   return { plan: "unknown", reason: `unrecognized plan-type values: ${[...unique].join(",")}` };
+}
+
+/** Authenticated Console history from cloud-init can carry guest sshd host fingerprints. */
+export const GUEST_SSH_HOST_FINGERPRINT_SOURCE = "cloud-init-console-history";
+/** OCI serial-console / instance-console-connection identity is a different SSH service. */
+export const SERIAL_CONSOLE_FINGERPRINT_SOURCE = "serial-console-service";
+
+export type SshHostFingerprintSource =
+  | typeof GUEST_SSH_HOST_FINGERPRINT_SOURCE
+  | typeof SERIAL_CONSOLE_FINGERPRINT_SOURCE
+  | "unknown";
+
+export function classifySshHostFingerprintSource(raw: string): SshHostFingerprintSource {
+  const value = raw.trim().toLowerCase();
+  if (
+    value.includes("instance-console-connection") ||
+    value.includes("serial-console") ||
+    value.includes("serial console")
+  ) {
+    return SERIAL_CONSOLE_FINGERPRINT_SOURCE;
+  }
+  if (value.includes("cloud-init") && (value.includes("console-history") || value.includes("console history"))) {
+    return GUEST_SSH_HOST_FINGERPRINT_SOURCE;
+  }
+  return "unknown";
+}
+
+/** Serial-console service fingerprints must never be enrolled as the Ubuntu sshd host key. */
+export function isUsableGuestSshHostFingerprint(source: SshHostFingerprintSource | string): boolean {
+  const classified =
+    source === GUEST_SSH_HOST_FINGERPRINT_SOURCE ||
+    source === SERIAL_CONSOLE_FINGERPRINT_SOURCE ||
+    source === "unknown"
+      ? source
+      : classifySshHostFingerprintSource(source);
+  return classified === GUEST_SSH_HOST_FINGERPRINT_SOURCE;
 }
 
 export function isForbiddenSshCidr(cidr: string): boolean {
@@ -555,6 +597,7 @@ async function loadAccount(
     return {
       authenticated: false,
       billingPlan: "unknown",
+      subscriptionAccess: "unknown",
       subscriptions: [],
       evidence: regions.error,
     };
@@ -567,6 +610,7 @@ async function loadAccount(
     return {
       authenticated: false,
       billingPlan: "unknown",
+      subscriptionAccess: "unknown",
       subscriptions: [],
       evidence: "region-subscription list did not include tenancy-id and home region-name",
     };
@@ -594,8 +638,9 @@ async function loadAccount(
       tenancyId,
       homeRegion,
       billingPlan: "unknown",
+      subscriptionAccess: "denied",
       subscriptions: [],
-      evidence: `OSP Gateway subscription list failed: ${subscriptions.error}`,
+      evidence: `OSP Gateway subscription list failed (absent or ambiguous permissions): ${subscriptions.error}`,
     };
   }
   const items = ociItems(subscriptions.value);
@@ -605,9 +650,11 @@ async function loadAccount(
     tenancyId,
     homeRegion,
     billingPlan: classified.plan,
+    subscriptionAccess: "ok",
     subscriptions: items.map((item) => ({
       id: asString(cliValue(item, "id")),
       planType: asString(cliValue(item, "plan_type")),
+      accountType: asString(cliValue(item, "account_type")),
     })),
     evidence: classified.reason,
   };
@@ -863,6 +910,12 @@ async function buildEligibility(
     });
   }
 
+  if (discovered.account.subscriptionAccess !== "ok") {
+    pushBlocker(blockers, {
+      code: "permissions",
+      message: discovered.account.evidence || "OSP Gateway subscription permissions are absent or ambiguous",
+    });
+  }
   if (discovered.account.billingPlan === "payg") {
     pushBlocker(blockers, {
       code: "payg-plan",
