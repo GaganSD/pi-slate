@@ -847,3 +847,62 @@ test("compartment list with an unexpected root id fails closed", async () => {
   assert.equal(report.inventory.compartments.includes(TENANCY), false);
   assert.match(report.inventory.failedQueries.join(" "), /tenancy root/);
 });
+
+const emptyList = (): CommandResult => ({ code: 0, stdout: "", stderr: "" });
+
+test("empty instance and volume list stdout is an empty inventory, not a failure", async () => {
+  const provider = ociProvider({
+    run: fakeRunner({
+      "compute instance list": emptyList,
+      "bv boot-volume list": emptyList,
+      "bv volume list": emptyList,
+      "compute boot-volume-attachment list": emptyList,
+    }),
+  });
+  const report = await provider.evaluateCreate(request());
+  assert.equal(report.inventory.failedQueries.length, 0);
+  assert.equal(report.inventory.instances.length, 0);
+  assert.equal(report.inventory.volumes.length, 0);
+  assert.equal(report.inventory.storageGb, 0);
+  assert.equal(report.eligible, true);
+});
+
+test("empty named VCN list stdout is missing, not a list failure", async () => {
+  const provider = ociProvider({
+    run: fakeRunner({
+      "network vcn list": emptyList,
+    }),
+  });
+  const report = await provider.evaluateCreate(request());
+  assert.equal(report.eligible, true);
+  assert.equal(report.blockers.some((blocker) => blocker.code === "failed-inventory"), false);
+});
+
+test("empty image-list stdout still fails closed", async () => {
+  const provider = ociProvider({
+    run: fakeRunner({
+      "compute image list": emptyList,
+    }),
+  });
+  const report = await provider.evaluateCreate(request());
+  assert.equal(report.eligible, false);
+  assert.equal(report.blockers.some((blocker) => blocker.code === "image-ineligible"), true);
+});
+
+test("nonzero or malformed instance list still fails inventory", async () => {
+  const failed = ociProvider({
+    run: fakeRunner({
+      "compute instance list": () => fail("NotAuthorized"),
+    }),
+  });
+  const failedReport = await failed.evaluateCreate(request());
+  assert.equal(failedReport.blockers.some((blocker) => blocker.code === "failed-inventory"), true);
+
+  const malformed = ociProvider({
+    run: fakeRunner({
+      "compute instance list": () => ({ code: 0, stdout: "not-json", stderr: "" }),
+    }),
+  });
+  const malformedReport = await malformed.evaluateCreate(request());
+  assert.equal(malformedReport.blockers.some((blocker) => blocker.code === "failed-inventory"), true);
+});

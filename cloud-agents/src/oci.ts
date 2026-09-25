@@ -882,6 +882,7 @@ async function loadInventory(
   for (const compartmentId of inventory.compartments) {
     const instances = await readJson(
       exec(["compute", "instance", "list", "--compartment-id", compartmentId, "--all"], region),
+      { emptyStdout: "empty-list" },
     );
     if (!instances.ok) {
       inventory.failedQueries.push(`instance list ${compartmentId}: ${instances.error}`);
@@ -902,7 +903,7 @@ async function loadInventory(
         bootArgs.push("--availability-domain", ad);
         blockArgs.push("--availability-domain", ad);
       }
-      const boots = await readJson(exec(bootArgs, region));
+      const boots = await readJson(exec(bootArgs, region), { emptyStdout: "empty-list" });
       if (!boots.ok) {
         inventory.failedQueries.push(`boot-volume list ${compartmentId}: ${boots.error}`);
       } else {
@@ -911,7 +912,7 @@ async function loadInventory(
           if (parsed) inventory.volumes.push(parsed);
         }
       }
-      const blocks = await readJson(exec(blockArgs, region));
+      const blocks = await readJson(exec(blockArgs, region), { emptyStdout: "empty-list" });
       if (!blocks.ok) {
         inventory.failedQueries.push(`volume list ${compartmentId}: ${blocks.error}`);
       } else {
@@ -936,6 +937,7 @@ async function loadInventory(
             ],
             region,
           ),
+          { emptyStdout: "empty-list" },
         );
         if (!attachments.ok) {
           attachmentsKnown = false;
@@ -1580,7 +1582,9 @@ async function ensureNetwork(
     input.partial.push({ kind: "nsg", id: nsgId, displayName: nsgName, note: "created; not auto-destroyed" });
   }
 
-  const rules = await readJson(exec(["network", "nsg", "rules", "list", "--nsg-id", nsgId], input.region));
+  const rules = await readJson(exec(["network", "nsg", "rules", "list", "--nsg-id", nsgId], input.region), {
+    emptyStdout: "empty-list",
+  });
   const haveSsh = rules.ok
     && ociItems(rules.value).some((rule) => asString(cliValue(rule, "source")) === input.sshCidr);
   if (!haveSsh) {
@@ -1738,7 +1742,7 @@ async function findNamed(
   parts: readonly string[],
   region: string,
 ): Promise<FindNamedResult> {
-  const listed = await readJson(exec(parts, region));
+  const listed = await readJson(exec(parts, region), { emptyStdout: "empty-list" });
   if (!listed.ok) return { status: "error", error: listed.error };
   const live = ociItems(listed.value).filter((item) => isLiveLifecycle(asString(cliValue(item, "lifecycle_state")) ?? "AVAILABLE"));
   if (live.length === 0) return { status: "missing" };
@@ -1773,13 +1777,19 @@ function hostnameLabel(displayName: string): string {
   return displayName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "").slice(0, 15) || "pi-cloud";
 }
 
-async function readJson(resultPromise: Promise<CommandResult>): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+async function readJson(
+  resultPromise: Promise<CommandResult>,
+  options: { emptyStdout?: "error" | "empty-list" } = {},
+): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
   const result = await resultPromise;
   if (result.code !== 0) {
     return { ok: false, error: compactError(result.stderr || result.stdout || `exit ${result.code}`) };
   }
   const text = result.stdout.trim();
-  if (!text) return { ok: false, error: "empty CLI stdout" };
+  if (!text) {
+    if (options.emptyStdout === "empty-list") return { ok: true, value: { data: [] } };
+    return { ok: false, error: "empty CLI stdout" };
+  }
   try {
     return { ok: true, value: JSON.parse(text) as unknown };
   } catch (error) {
