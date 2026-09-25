@@ -1,0 +1,38 @@
+{
+  "name": "pi-cloud-agent",
+  "version": "0.0.1",
+  "description": "Pi Cloud: run Pi on an Oracle A1 VM and reattach with pi --cloud.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Gagan Devagiri",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "pi-extension"
+  ],
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "pack:check": "npm pack --dry-run"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
+    "@types/node": "26.6.2",
+    "typescript": "5.9.3"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
