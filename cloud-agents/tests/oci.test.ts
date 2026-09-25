@@ -909,3 +909,182 @@ test("nonzero or malformed instance list still fails inventory", async () => {
   const malformedReport = await malformed.evaluateCreate(request());
   assert.equal(malformedReport.blockers.some((blocker) => blocker.code === "failed-inventory"), true);
 });
+
+const VCN = "ocid1.vcn.oc1..owned";
+const IGW = "ocid1.internetgateway.oc1..owned";
+const SL = "ocid1.securitylist.oc1..owned";
+const NSG = "ocid1.networksecuritygroup.oc1..owned";
+const SUBNET = "ocid1.subnet.oc1..owned";
+const RT = "ocid1.routetable.oc1..owned";
+const owned = { "managed-by": MANAGED_BY };
+
+function sshIngress(source = SSH_CIDR, port = 22, protocol = "6"): Record<string, unknown> {
+  return {
+    direction: "INGRESS",
+    protocol,
+    source,
+    "source-type": "CIDR_BLOCK",
+    "tcp-options": { "destination-port-range": { min: port, max: port } },
+  };
+}
+
+function ownedNetworkHandlers(overrides: Handlers = {}): Handlers {
+  return {
+    "network vcn list": () =>
+      ok([
+        {
+          id: VCN,
+          "display-name": `${DEFAULT_DISPLAY_NAME}-vcn`,
+          "lifecycle-state": "AVAILABLE",
+          "freeform-tags": owned,
+          "default-route-table-id": RT,
+        },
+      ]),
+    "network vcn get": () => ok({ id: VCN, "default-route-table-id": RT }),
+    "network internet-gateway list": () =>
+      ok([
+        {
+          id: IGW,
+          "vcn-id": VCN,
+          "display-name": `${DEFAULT_DISPLAY_NAME}-igw`,
+          "lifecycle-state": "AVAILABLE",
+          "freeform-tags": owned,
+        },
+      ]),
+    "network security-list list": () =>
+      ok([
+        {
+          id: SL,
+          "vcn-id": VCN,
+          "display-name": `${DEFAULT_DISPLAY_NAME}-sl`,
+          "lifecycle-state": "AVAILABLE",
+          "freeform-tags": owned,
+          "ingress-security-rules": [],
+        },
+      ]),
+    "network nsg list": () =>
+      ok([
+        {
+          id: NSG,
+          "vcn-id": VCN,
+          "display-name": `${DEFAULT_DISPLAY_NAME}-nsg`,
+          "lifecycle-state": "AVAILABLE",
+          "freeform-tags": owned,
+        },
+      ]),
+    "network subnet list": () =>
+      ok([
+        {
+          id: SUBNET,
+          "vcn-id": VCN,
+          "display-name": `${DEFAULT_DISPLAY_NAME}-subnet`,
+          "lifecycle-state": "AVAILABLE",
+          "freeform-tags": owned,
+          "security-list-ids": [SL],
+          "prohibit-public-ip-on-vnic": false,
+        },
+      ]),
+    "network route-table get": () =>
+      ok({
+        id: RT,
+        "route-rules": [{ "cidr-block": "0.0.0.0/0", "network-entity-id": IGW }],
+      }),
+    "network nsg rules list": () => ok([sshIngress()]),
+    ...overrides,
+  };
+}
+
+test("reused NSG with extra or open ingress is refused and not mutated", async () => {
+  const log: string[][] = [];
+  const provider = ociProvider({
+    run: fakeRunner(
+      ownedNetworkHandlers({
+        "network nsg rules list": () => ok([sshIngress(), sshIngress("0.0.0.0/0")]),
+      }),
+      log,
+    ),
+  });
+  const result = await provider.create(request({ confirm: async () => true }));
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "open-ssh"), true);
+  assert.equal(log.some((argv) => argv.includes("nsg") && argv.includes("add")), false);
+});
+
+test("unreadable NSG rules list does not add rules", async () => {
+  const log: string[][] = [];
+  const provider = ociProvider({
+    run: fakeRunner(
+      ownedNetworkHandlers({
+        "network nsg rules list": () => fail("NotAuthorized"),
+      }),
+      log,
+    ),
+  });
+  const result = await provider.create(request({ confirm: async () => true }));
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "failed-inventory"), true);
+  assert.equal(log.some((argv) => argv.includes("nsg") && argv.includes("add")), false);
+});
+
+test("reused NSG with wrong protocol or port is refused", async () => {
+  const provider = ociProvider({
+    run: fakeRunner(
+      ownedNetworkHandlers({
+        "network nsg rules list": () => ok([sshIngress(SSH_CIDR, 2222, "6")]),
+      }),
+    ),
+  });
+  const result = await provider.create(request({ confirm: async () => true }));
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "open-ssh"), true);
+});
+
+test("subnet attached to the default open security list is refused", async () => {
+  const log: string[][] = [];
+  const provider = ociProvider({
+    run: fakeRunner(
+      ownedNetworkHandlers({
+        "network subnet list": () =>
+          ok([
+            {
+              id: SUBNET,
+              "vcn-id": VCN,
+              "display-name": `${DEFAULT_DISPLAY_NAME}-subnet`,
+              "lifecycle-state": "AVAILABLE",
+              "freeform-tags": owned,
+              "security-list-ids": ["ocid1.securitylist.oc1..default"],
+              "prohibit-public-ip-on-vnic": false,
+            },
+          ]),
+      }),
+      log,
+    ),
+  });
+  const result = await provider.create(request({ confirm: async () => true }));
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "open-ssh"), true);
+  assert.equal(log.some((argv) => isMutatingArgv(argv)), false);
+});
+
+test("429 TooManyRequests is throttled without automatic retry", async () => {
+  const log: string[][] = [];
+  let launches = 0;
+  const provider = ociProvider({
+    run: fakeRunner(
+      {
+        "compute instance launch": () => {
+          launches += 1;
+          return fail("TooManyRequests: Too many requests for the specified resource");
+        },
+      },
+      log,
+    ),
+  });
+  const result = await provider.create(request({ confirm: async () => true }));
+  assert.equal(result.status, "throttled");
+  assert.equal(result.attempts, 1);
+  assert.equal(launches, 1);
+  assert.equal(result.blockers.some((blocker) => blocker.code === "throttled"), true);
+  assert.match(result.blockers[0]?.message ?? "", /wait/);
+  assert.equal(result.partial.some((item) => item.kind === "vcn"), true);
+});

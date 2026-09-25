@@ -77,7 +77,8 @@ export type BlockerCode =
   | "permissions"
   | "ambiguous-instance"
   | "boot-size"
-  | "stale-eligibility";
+  | "stale-eligibility"
+  | "throttled";
 
 export type Blocker = {
   code: BlockerCode;
@@ -189,7 +190,7 @@ export type EligibilityReport = {
 };
 
 export type CreateResult = {
-  status: "adopted" | "blocked" | "capacity" | "unconfirmed" | "created";
+  status: "adopted" | "blocked" | "capacity" | "unconfirmed" | "created" | "throttled";
   instance?: InstanceSummary;
   blockers: Blocker[];
   partial: PartialAllocation[];
@@ -655,6 +656,21 @@ export function createOciProvider(options: OciProviderOptions = {}): OciProvider
           status: "created",
           instance: launched.instance,
           blockers: [],
+          partial,
+          attempts,
+          account: report.account,
+          inventory: report.inventory,
+        };
+      }
+      if (launched.throttled) {
+        return {
+          status: "throttled",
+          blockers: [
+            {
+              code: "throttled",
+              message: "OCI returned 429 TooManyRequests; wait, then retry manually. No automatic polling.",
+            },
+          ],
           partial,
           attempts,
           account: report.account,
@@ -1457,6 +1473,12 @@ async function ensureNetwork(
   );
   const igwLookup = namedOwnershipBlocker(existingIgw, "internet-gateway", igwName);
   if (igwLookup) return { ok: false, blockers: [igwLookup] };
+  if (existingIgw.status === "found") {
+    const igwVcn = asString(cliValue(existingIgw.item, "vcn_id"));
+    if (igwVcn && igwVcn !== vcnId) {
+      return { ok: false, blockers: [{ code: "ownership", message: `owned IGW ${igwName} is not attached to VCN ${vcnName}` }] };
+    }
+  }
   let igwId = existingIgw.status === "found" ? existingIgw.id : undefined;
   if (!igwId) {
     const created = await readJson(
@@ -1496,23 +1518,45 @@ async function ensureNetwork(
   if (!defaultRt || !igwId) {
     return { ok: false, blockers: [{ code: "failed-inventory", message: "could not resolve default route table for IGW route" }] };
   }
-  const routed = await readJson(
-    exec(
-      [
-        "network",
-        "route-table",
-        "update",
-        "--rt-id",
-        defaultRt,
-        "--route-rules",
-        JSON.stringify([{ cidrBlock: "0.0.0.0/0", networkEntityId: igwId, description: "internet via IGW" }]),
-        "--force",
-      ],
-      input.region,
-    ),
-  );
-  if (!routed.ok) {
-    return { ok: false, blockers: [{ code: "permissions", message: `route-table update failed: ${routed.error}` }] };
+  let routeReady = false;
+  if (existingVcn.status === "found") {
+    const existingRt = await readJson(exec(["network", "route-table", "get", "--rt-id", defaultRt], input.region));
+    if (!existingRt.ok) {
+      return { ok: false, blockers: [{ code: "failed-inventory", message: `route-table get failed: ${existingRt.error}` }] };
+    }
+    const existingRules = ociItems({ data: cliValue(asRecord(unwrapData(existingRt.value)) ?? {}, "route_rules") ?? [] });
+    const igwRoutes = existingRules.filter((rule) => {
+      const dest = asString(cliValue(rule, "cidr_block")) ?? asString(cliValue(rule, "destination"));
+      return dest === "0.0.0.0/0";
+    });
+    if (igwRoutes.some((rule) => asString(cliValue(rule, "network_entity_id")) === igwId)) {
+      routeReady = true;
+    } else if (igwRoutes.length > 0) {
+      return {
+        ok: false,
+        blockers: [{ code: "ownership", message: "default route table has a 0.0.0.0/0 rule that is not the owned IGW; refusing to overwrite" }],
+      };
+    }
+  }
+  if (!routeReady) {
+    const routed = await readJson(
+      exec(
+        [
+          "network",
+          "route-table",
+          "update",
+          "--rt-id",
+          defaultRt,
+          "--route-rules",
+          JSON.stringify([{ cidrBlock: "0.0.0.0/0", networkEntityId: igwId, description: "internet via IGW" }]),
+          "--force",
+        ],
+        input.region,
+      ),
+    );
+    if (!routed.ok) {
+      return { ok: false, blockers: [{ code: "permissions", message: `route-table update failed: ${routed.error}` }] };
+    }
   }
 
   const existingSl = await findNamed(
@@ -1522,6 +1566,10 @@ async function ensureNetwork(
   );
   const slLookup = namedOwnershipBlocker(existingSl, "security-list", slName);
   if (slLookup) return { ok: false, blockers: [slLookup] };
+  if (existingSl.status === "found") {
+    const slCheck = await validateReusedSecurityList(exec, existingSl.item, existingSl.id, input.region);
+    if (slCheck) return { ok: false, blockers: [slCheck] };
+  }
   let slId = existingSl.status === "found" ? existingSl.id : undefined;
   if (!slId) {
     const created = await readJson(
@@ -1592,9 +1640,15 @@ async function ensureNetwork(
   const rules = await readJson(exec(["network", "nsg", "rules", "list", "--nsg-id", nsgId], input.region), {
     emptyStdout: "empty-list",
   });
-  const haveSsh = rules.ok
-    && ociItems(rules.value).some((rule) => asString(cliValue(rule, "source")) === input.sshCidr);
-  if (!haveSsh) {
+  if (!rules.ok) {
+    return {
+      ok: false,
+      blockers: [{ code: "failed-inventory", message: `nsg rules list failed; refusing to add rules: ${rules.error}` }],
+    };
+  }
+  const nsgVerdict = nsgIngressVerdict(ociItems(rules.value), input.sshCidr);
+  if (nsgVerdict.status === "block") return { ok: false, blockers: [nsgVerdict.blocker] };
+  if (nsgVerdict.status === "needs-ssh") {
     const added = await readJson(
       exec(
         [
@@ -1632,6 +1686,14 @@ async function ensureNetwork(
   );
   const subnetLookup = namedOwnershipBlocker(existingSubnet, "subnet", subnetName);
   if (subnetLookup) return { ok: false, blockers: [subnetLookup] };
+  if (existingSubnet.status === "found") {
+    const subnetCheck = await validateReusedSubnet(exec, existingSubnet.item, existingSubnet.id, {
+      vcnId,
+      slId,
+      region: input.region,
+    });
+    if (subnetCheck) return { ok: false, blockers: [subnetCheck] };
+  }
   let subnetId = existingSubnet.status === "found" ? existingSubnet.id : undefined;
   if (!subnetId) {
     const created = await readJson(
@@ -1683,7 +1745,7 @@ async function launchInstance(
     bootVolumeGb: number;
     sshPublicKey: string;
   },
-): Promise<{ instance?: InstanceSummary; capacity: boolean; message: string }> {
+): Promise<{ instance?: InstanceSummary; capacity: boolean; throttled: boolean; message: string }> {
   const launched = await readJson(
     exec(
       [
@@ -1725,22 +1787,29 @@ async function launchInstance(
   if (launched.ok) {
     const raw = asRecord(unwrapData(launched.value)) ?? {};
     const parsed = parseInstance(raw, input.tenancyId);
-    if (parsed) return { instance: parsed, capacity: false, message: "launched" };
-    return { capacity: false, message: "instance launch returned no instance id" };
+    if (parsed) return { instance: parsed, capacity: false, throttled: false, message: "launched" };
+    return { capacity: false, throttled: false, message: "instance launch returned no instance id" };
+  }
+  if (isThrottleError(launched.error)) {
+    return { capacity: false, throttled: true, message: launched.error };
   }
   if (isCapacityError(launched.error)) {
-    return { capacity: true, message: launched.error };
+    return { capacity: true, throttled: false, message: launched.error };
   }
-  return { capacity: false, message: launched.error };
+  return { capacity: false, throttled: false, message: launched.error };
 }
 
 function isCapacityError(message: string): boolean {
   return /outofhostcapacity|out of host capacity/i.test(message);
 }
 
+function isThrottleError(message: string): boolean {
+  return /toomanyrequests|too many requests|\b429\b/i.test(message);
+}
+
 type FindNamedResult =
   | { status: "missing" }
-  | { status: "found"; id: string; managedBy?: string }
+  | { status: "found"; id: string; managedBy?: string; item: Record<string, unknown> }
   | { status: "error"; error: string }
   | { status: "ambiguous"; count: number };
 
@@ -1759,6 +1828,97 @@ async function findNamed(
     status: "found",
     id: asString(cliValue(live[0], "id")) ?? "",
     managedBy: asString(tags["managed-by"] ?? tags.managedBy ?? tags.managed_by),
+    item: live[0],
+  };
+}
+
+function isIngressDirection(rule: Record<string, unknown>): boolean {
+  return (asString(cliValue(rule, "direction")) ?? "").toUpperCase() === "INGRESS";
+}
+
+function isExactOperatorSshIngress(rule: Record<string, unknown>, sshCidr: string): boolean {
+  if (!isIngressDirection(rule)) return false;
+  if (asString(cliValue(rule, "source")) !== sshCidr) return false;
+  const sourceType = asString(cliValue(rule, "source_type")) ?? "CIDR_BLOCK";
+  if (sourceType !== "CIDR_BLOCK") return false;
+  const protocol = String(cliValue(rule, "protocol") ?? "");
+  if (protocol !== "6" && protocol.toLowerCase() !== "tcp") return false;
+  const tcp = asRecord(cliValue(rule, "tcp_options")) ?? {};
+  const ports = asRecord(cliValue(tcp, "destination_port_range")) ?? {};
+  return asNumber(cliValue(ports, "min")) === 22 && asNumber(cliValue(ports, "max")) === 22;
+}
+
+async function validateReusedSecurityList(
+  exec: (parts: readonly string[], region?: string) => Promise<CommandResult>,
+  item: Record<string, unknown>,
+  slId: string,
+  region: string,
+): Promise<Blocker | undefined> {
+  let record = item;
+  if (!hasCliKey(record, "ingress_security_rules")) {
+    const got = await readJson(exec(["network", "security-list", "get", "--security-list-id", slId], region));
+    if (!got.ok) return { code: "failed-inventory", message: `security-list get failed: ${got.error}` };
+    record = asRecord(unwrapData(got.value)) ?? {};
+  }
+  if (!hasCliKey(record, "ingress_security_rules")) {
+    return { code: "failed-inventory", message: "reused security list did not expose ingress-security-rules" };
+  }
+  const ingress = cliValue(record, "ingress_security_rules");
+  if (!Array.isArray(ingress)) {
+    return { code: "failed-inventory", message: "reused security list ingress-security-rules is not a list" };
+  }
+  if (ingress.length > 0) {
+    return { code: "open-ssh", message: "reused security list has ingress rules; refusing to mutate it" };
+  }
+  return undefined;
+}
+
+async function validateReusedSubnet(
+  exec: (parts: readonly string[], region?: string) => Promise<CommandResult>,
+  item: Record<string, unknown>,
+  subnetId: string,
+  input: { vcnId: string; slId: string; region: string },
+): Promise<Blocker | undefined> {
+  let record = item;
+  const hasFields =
+    hasCliKey(record, "vcn_id") &&
+    hasCliKey(record, "security_list_ids") &&
+    hasCliKey(record, "prohibit_public_ip_on_vnic");
+  if (!hasFields) {
+    const got = await readJson(exec(["network", "subnet", "get", "--subnet-id", subnetId], input.region));
+    if (!got.ok) return { code: "failed-inventory", message: `subnet get failed: ${got.error}` };
+    record = asRecord(unwrapData(got.value)) ?? {};
+  }
+  const subnetVcn = asString(cliValue(record, "vcn_id"));
+  if (subnetVcn !== input.vcnId) {
+    return { code: "ownership", message: "reused subnet is not on the owned VCN" };
+  }
+  const slIds = cliValue(record, "security_list_ids");
+  if (!Array.isArray(slIds) || slIds.length !== 1 || slIds[0] !== input.slId) {
+    return {
+      code: "open-ssh",
+      message: "reused subnet is not attached only to the owned egress-only security list",
+    };
+  }
+  if (cliValue(record, "prohibit_public_ip_on_vnic") !== false) {
+    return { code: "ownership", message: "reused subnet does not allow public IPs" };
+  }
+  return undefined;
+}
+
+function nsgIngressVerdict(
+  rules: Array<Record<string, unknown>>,
+  sshCidr: string,
+): { status: "ok" } | { status: "needs-ssh" } | { status: "block"; blocker: Blocker } {
+  const ingress = rules.filter((rule) => isIngressDirection(rule));
+  if (ingress.length === 0) return { status: "needs-ssh" };
+  if (ingress.length === 1 && isExactOperatorSshIngress(ingress[0], sshCidr)) return { status: "ok" };
+  return {
+    status: "block",
+    blocker: {
+      code: "open-ssh",
+      message: "reused NSG ingress is not exactly operator /32 TCP/22; refusing to mutate or broaden it",
+    },
   };
 }
 
