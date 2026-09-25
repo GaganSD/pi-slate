@@ -166,6 +166,9 @@ function fakeRunner(overrides: Handlers = {}, log: string[][] = []): CommandRunn
     assert.equal(argv[3], "--auth");
     assert.equal(argv[4], OCI_AUTH);
     assert.equal(argv.includes("--output"), true);
+    const configIdx = argv.indexOf("--config-file");
+    assert.ok(configIdx > 0, "CLI must use the same --config-file the tenancy OCID was read from");
+    assert.equal(argv[configIdx + 1], CONFIG);
     const parsed = parseArgv(argv);
     const key = parsed.tokens.join(" ");
     const handler = handlers[key];

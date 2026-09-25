@@ -435,7 +435,7 @@ export function createOciProvider(options: OciProviderOptions = {}): OciProvider
   const capacityRetryDelayMs = options.capacityRetryDelayMs ?? 0;
 
   const exec = async (parts: readonly string[], region?: string): Promise<CommandResult> => {
-    return await run(buildArgv(ociBin, profile, parts, region));
+    return await run(buildArgv(ociBin, profile, parts, region, configFile));
   };
 
   const preflight = async (): Promise<AccountSnapshot> => {
@@ -696,8 +696,15 @@ export function createOciProvider(options: OciProviderOptions = {}): OciProvider
   return { preflight, discover, evaluateCreate, create };
 }
 
-function buildArgv(ociBin: string, profile: string, parts: readonly string[], region?: string): string[] {
+function buildArgv(
+  ociBin: string,
+  profile: string,
+  parts: readonly string[],
+  region?: string,
+  configFile?: string,
+): string[] {
   const argv = [ociBin, "--profile", profile, "--auth", OCI_AUTH, "--output", "json"];
+  if (configFile) argv.push("--config-file", configFile);
   if (region) argv.push("--region", region);
   argv.push(...parts);
   return argv;
