@@ -14,17 +14,19 @@ import {
   MANAGED_BY,
   OCI_AUTH,
   OCI_PROFILE,
+  spawnCommand,
   type CommandResult,
   type CommandRunner,
 } from "../src/oci.ts";
 import {
+  createMemoryRegistry,
   createRemoteTransport,
   looksLikeSecretTransfer,
   remoteArgv,
   sshArgvIsSecure,
 } from "../src/remote.ts";
-import { identityPath, loadState } from "../src/state.ts";
-import { runCloudStartup, type CloudUi } from "../src/setup.ts";
+import { identityPath, loadState, saveState, setupLockPath, acquireExclusiveLock } from "../src/state.ts";
+import { formatCreateConfirmation, resolveCloudRun, runCloudStartup, type CloudUi } from "../src/setup.ts";
 import { CLOUD_INIT_CONSOLE } from "./fixtures.ts";
 
 const TENANCY = "ocid1.tenancy.oc1..aaaa";
@@ -94,7 +96,15 @@ function baseOciHandlers(overrides: Handlers = {}): Handlers {
     "bv volume list": () => ok([]),
     "compute boot-volume-attachment list": () => ok([]),
     "compute image list": () =>
-      ok([{ id: IMAGE, "operating-system": "Canonical Ubuntu", "display-name": "Canonical-Ubuntu-22.04" }]),
+      ok([
+        {
+          id: IMAGE,
+          "operating-system": "Canonical Ubuntu",
+          "display-name": "Canonical-Ubuntu-22.04",
+          "compartment-id": null,
+          "lifecycle-state": "AVAILABLE",
+        },
+      ]),
     "network vcn list": () => ok([]),
     "network internet-gateway list": () => ok([]),
     "network security-list list": () => ok([]),
@@ -139,14 +149,23 @@ function baseOciHandlers(overrides: Handlers = {}): Handlers {
 type RemoteState = {
   arch: string;
   bootId: string;
+  nodeVersion: string;
   tmux: Set<string>;
   dirs: Set<string>;
   locks: Set<string>;
   repos: Set<string>;
+  branches: Map<string, string>;
+  branchNames: Map<string, Set<string>>;
 };
 
 function handleRemote(state: RemoteState, command: readonly string[]): CommandResult {
   if (command[0] === "uname" && command[1] === "-m") return { code: 0, stdout: `${state.arch}\n`, stderr: "" };
+  if (command[0] === "node" && command[1] === "-p") {
+    return { code: 0, stdout: `${state.nodeVersion}\n`, stderr: "" };
+  }
+  if (command[0] === "git" && command[1] === "--version") return { code: 0, stdout: "git version 2.43.0\n", stderr: "" };
+  if (command[0] === "tmux" && command[1] === "-V") return { code: 0, stdout: "tmux 3.4\n", stderr: "" };
+  if (command[0] === "pi" && command[1] === "--version") return { code: 0, stdout: "0.85.1\n", stderr: "" };
   if (command[0] === "cat" && command[1] === "/proc/sys/kernel/random/boot_id") {
     return { code: 0, stdout: `${state.bootId}\n`, stderr: "" };
   }
@@ -180,14 +199,48 @@ function handleRemote(state: RemoteState, command: readonly string[]): CommandRe
     if (dest) {
       state.repos.add(dest);
       state.dirs.add(dest);
+      state.branchNames.set(dest, new Set([command[3] ?? ""]));
+      state.branches.set(dest, command[3] ?? "");
     }
     return { code: 0, stdout: "", stderr: "" };
   }
   if (command[0] === "git" && command[3] === "rev-parse") {
     return state.repos.has(command[2] ?? "") ? { code: 0, stdout: "true\n", stderr: "" } : fail("not a git repo");
   }
-  if (command[0] === "git" && command[3] === "checkout") return { code: 0, stdout: "", stderr: "" };
+  if (command[0] === "git" && command[3] === "show-ref") {
+    const path = command[2] ?? "";
+    const ref = command.at(-1) ?? "";
+    const name = ref.replace(/^refs\/heads\//, "");
+    return state.branchNames.get(path)?.has(name) ? { code: 0, stdout: "", stderr: "" } : fail("missing ref");
+  }
+  if (command[0] === "git" && command[3] === "checkout") {
+    const path = command[2] ?? "";
+    if (command[4] === "-B") return fail("refusing force-move checkout -B");
+    if (command[4] === "-b") {
+      const name = command[5] ?? "";
+      const names = state.branchNames.get(path) ?? new Set<string>();
+      names.add(name);
+      state.branchNames.set(path, names);
+      state.branches.set(path, name);
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  }
   return fail(`unexpected remote: ${command.join(" ")}`);
+}
+
+function emptyRemoteState(): RemoteState {
+  return {
+    arch: "aarch64",
+    bootId: "boot-aaa",
+    nodeVersion: "22.19.0",
+    tmux: new Set(),
+    dirs: new Set(),
+    locks: new Set(),
+    repos: new Set(),
+    branches: new Map(),
+    branchNames: new Map(),
+  };
 }
 
 function mockUi(answers: { confirm?: boolean | boolean[]; input?: string[]; select?: string[] } = {}): CloudUi {
@@ -222,19 +275,13 @@ async function harness(options: {
   repo?: string;
   branch?: string;
   cwd?: string;
+  stateDir?: string;
   hostKey?: string;
 } = {}) {
-  const stateDir = await mkdtemp(join(tmpdir(), "pi-cloud-state-"));
+  const stateDir = options.stateDir ?? (await mkdtemp(join(tmpdir(), "pi-cloud-state-")));
   const knownHostsDir = await mkdtemp(join(tmpdir(), "pi-cloud-kh-"));
   await seedIdentity(stateDir);
-  const remoteState: RemoteState = {
-    arch: "aarch64",
-    bootId: "boot-aaa",
-    tmux: new Set(),
-    dirs: new Set(),
-    locks: new Set(),
-    repos: new Set(),
-  };
+  const remoteState = emptyRemoteState();
   const log: string[][] = [];
   const ociHandlers = baseOciHandlers(options.oci);
   const run: CommandRunner = async (argv) => {
@@ -429,14 +476,7 @@ test("saved host resumes without launching another instance", async () => {
   assert.equal(state.host?.ocid, INSTANCE_ID);
 
   const knownHostsDir = await mkdtemp(join(tmpdir(), "pi-cloud-kh-"));
-  const remoteState: RemoteState = {
-    arch: "aarch64",
-    bootId: "boot-aaa",
-    tmux: new Set(),
-    dirs: new Set(),
-    locks: new Set(),
-    repos: new Set(),
-  };
+  const remoteState = emptyRemoteState();
   const log: string[][] = [];
   const ociHandlers = baseOciHandlers({
     "compute instance list": () => ok([liveManaged()]),
@@ -468,6 +508,217 @@ test("saved host resumes without launching another instance", async () => {
 
 test("package runtime never copies secret paths", () => {
   assert.equal(looksLikeSecretTransfer(["scp", "file", "host:"]), true);
-  assert.equal(looksLikeSecretTransfer(["ssh", "ubuntu@host", "--", "cat", "/home/ubuntu/.oci/config"]), true);
-  assert.equal(looksLikeSecretTransfer(["ssh", "ubuntu@host", "--", "git", "clone", "https://github.com/acme/proj.git"]), false);
+  assert.equal(looksLikeSecretTransfer(["ssh", "ubuntu@host", "'cat' '/home/ubuntu/.oci/config'"]), true);
+  assert.equal(
+    looksLikeSecretTransfer(["ssh", "ubuntu@host", "'git' 'clone' 'https://github.com/acme/proj.git'"]),
+    false,
+  );
+});
+
+test("default runtime wires spawnCommand", () => {
+  assert.equal(resolveCloudRun(undefined), spawnCommand);
+  assert.equal(resolveCloudRun({}), spawnCommand);
+  const custom: CommandRunner = async () => ({ code: 0, stdout: "", stderr: "" });
+  assert.equal(resolveCloudRun({ run: custom }), custom);
+});
+
+test("default startup without runtime.run adopts using injected seams, not a missing-run block", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "pi-cloud-state-"));
+  const knownHostsDir = await mkdtemp(join(tmpdir(), "pi-cloud-kh-"));
+  await seedIdentity(stateDir);
+  await saveState(stateDir, {
+    version: 1,
+    setupStep: "ready",
+    identityFile: identityPath(stateDir),
+    sshPublicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIlocalfixture pi-cloud",
+    host: {
+      id: "inst-adoptme0001",
+      ocid: INSTANCE_ID,
+      address: PUBLIC_IP,
+      user: "ubuntu",
+      expectedHostKey: HOST_KEY,
+      displayName: DEFAULT_DISPLAY_NAME,
+      compartmentId: TENANCY,
+      region: HOME,
+    },
+    sessions: [],
+  });
+  const log: string[][] = [];
+  const remoteState = emptyRemoteState();
+  const ociHandlers = baseOciHandlers({
+    "compute instance list": () => ok([liveManaged()]),
+  });
+  const injected: CommandRunner = async (argv) => {
+    log.push([...argv]);
+    throw new Error(`default startup must not call injected run; got ${argv.join(" ")}`);
+  };
+  const ociRun: CommandRunner = async (argv) => {
+    const parsed = parseArgv(argv);
+    const handler = ociHandlers[parsed.tokens.join(" ")];
+    if (!handler) return fail(parsed.tokens.join(" "));
+    return await handler(parsed);
+  };
+  const remoteRun: CommandRunner = async (argv) => {
+    if (argv[0] === "ssh") return handleRemote(remoteState, remoteArgv(argv));
+    return fail(argv.join(" "));
+  };
+  const outcome = await runCloudStartup({
+    cwd: stateDir,
+    repo: "acme/proj",
+    branch: "main",
+    ui: mockUi({ confirm: false }),
+    runtime: {
+      oci: createOciProvider({ run: ociRun }),
+      remote: createRemoteTransport({ run: remoteRun, knownHostsDir, randomId: () => "sess01" }),
+      stateDir,
+      knownHostsDir,
+    },
+  });
+  assert.equal(outcome.status, "ready", outcome.status === "blocked" ? outcome.blockers.map((b) => b.message).join("; ") : "");
+  assert.equal(log.length, 0);
+  void injected;
+});
+
+test("corrupt existing state fails closed and does not create", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "pi-cloud-state-"));
+  await writeFile(join(stateDir, "state.json"), "{not-json", { mode: 0o600 });
+  let launches = 0;
+  const { outcome, log } = await harness({
+    stateDir,
+    ui: mockUi({ confirm: true, input: [SSH_CIDR] }),
+    oci: {
+      "compute instance launch": () => {
+        launches += 1;
+        return fail("should not launch");
+      },
+    },
+  });
+  assert.equal(outcome.status, "blocked");
+  if (outcome.status === "blocked") {
+    assert.equal(outcome.blockers.some((blocker) => blocker.code === "corrupt-state"), true);
+  }
+  assert.equal(launches, 0);
+  assert.equal(log.some((argv) => argv.includes("launch")), false);
+});
+
+test("concurrent first-run create takes the exclusive setup lock", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "pi-cloud-state-"));
+  const knownHostsDir = await mkdtemp(join(tmpdir(), "pi-cloud-kh-"));
+  await seedIdentity(stateDir);
+  let launches = 0;
+  let releaseConfirm: ((value: boolean) => void) | undefined;
+  let enteredConfirm: (() => void) | undefined;
+  const sawConfirm = new Promise<void>((resolve) => {
+    enteredConfirm = resolve;
+  });
+  const confirmGate = new Promise<boolean>((resolve) => {
+    releaseConfirm = resolve;
+  });
+  const ui: CloudUi = {
+    async confirm() {
+      enteredConfirm?.();
+      return await confirmGate;
+    },
+    async input() {
+      return SSH_CIDR;
+    },
+    async select() {
+      return undefined;
+    },
+    notify() {},
+  };
+  const ociHandlers = baseOciHandlers({
+    "compute instance launch": () => {
+      launches += 1;
+      return ok({
+        id: "ocid1.instance.oc1..created",
+        "display-name": DEFAULT_DISPLAY_NAME,
+        shape: A1_SHAPE,
+        "shape-config": { ocpus: A1_OCPUS, "memory-in-gbs": A1_MEMORY_GB },
+        "lifecycle-state": "RUNNING",
+        "availability-domain": AD,
+        "compartment-id": TENANCY,
+        "freeform-tags": { "managed-by": MANAGED_BY },
+      });
+    },
+  });
+  const makeRuntime = (sessionId: string) => {
+    const remoteState = emptyRemoteState();
+    const run: CommandRunner = async (argv) => {
+      if (argv[0] === "ssh") return handleRemote(remoteState, remoteArgv(argv));
+      const parsed = parseArgv(argv);
+      const handler = ociHandlers[parsed.tokens.join(" ")];
+      return handler ? await handler(parsed) : fail(parsed.tokens.join(" "));
+    };
+    return {
+      run,
+      oci: createOciProvider({ run }),
+      remote: createRemoteTransport({ run, knownHostsDir, randomId: () => sessionId, registry: createMemoryRegistry() }),
+      stateDir,
+      knownHostsDir,
+    };
+  };
+  const first = runCloudStartup({
+    cwd: stateDir,
+    repo: "acme/proj",
+    branch: "main",
+    ui,
+    runtime: makeRuntime("sessA"),
+  });
+  await sawConfirm;
+  const second = await runCloudStartup({
+    cwd: stateDir,
+    repo: "acme/proj",
+    branch: "main",
+    ui: mockUi({ confirm: true, input: [SSH_CIDR] }),
+    runtime: makeRuntime("sessB"),
+  });
+  assert.equal(second.status, "blocked");
+  if (second.status === "blocked") {
+    assert.equal(second.blockers.some((blocker) => blocker.code === "concurrent-start"), true);
+  }
+  assert.equal(launches, 0);
+  releaseConfirm?.(true);
+  const finished = await first;
+  assert.equal(finished.status === "ready" || finished.status === "blocked", true);
+  assert.equal(launches <= 1, true);
+});
+
+test("stale setup lock blocks and is not stolen", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "pi-cloud-state-"));
+  await seedIdentity(stateDir);
+  await acquireExclusiveLock(setupLockPath(stateDir));
+  const { outcome, log } = await harness({
+    stateDir,
+    ui: mockUi({ confirm: true, input: [SSH_CIDR] }),
+  });
+  assert.equal(outcome.status, "blocked");
+  if (outcome.status === "blocked") {
+    assert.equal(outcome.blockers.some((blocker) => blocker.code === "concurrent-start"), true);
+  }
+  assert.equal(log.some((argv) => argv.includes("launch")), false);
+});
+
+test("create confirmation names the verified platform image and trial caveat", () => {
+  const text = formatCreateConfirmation(
+    {
+      authenticated: true,
+      tenancyId: TENANCY,
+      homeRegion: HOME,
+      billingPlan: "free-tier",
+      subscriptionAccess: "ok",
+      subscriptions: [],
+      evidence: "unambiguous OSP Gateway plan-type=FREE_TIER inventory",
+    },
+    {
+      intended: { shape: A1_SHAPE, ocpus: A1_OCPUS, memoryGb: A1_MEMORY_GB, bootVolumeGb: 50, sshCidr: SSH_CIDR },
+      image: { id: IMAGE, displayName: "Canonical-Ubuntu-22.04", operatingSystem: "Canonical Ubuntu" },
+      plannedWrites: ["compute instance launch"],
+    },
+  );
+  assert.match(text, /Canonical-Ubuntu-22\.04/);
+  assert.match(text, new RegExp(IMAGE));
+  assert.match(text, /FREE_TIER includes trial/);
+  assert.match(text, /not a blanket Always Free proof/);
+  assert.match(text, /independently bounded/);
 });

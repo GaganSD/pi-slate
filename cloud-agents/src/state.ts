@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { randomBytes } from "node:crypto";
 import type { SessionRecord, SessionRegistry } from "./remote.ts";
 import { isRecord } from "./util.ts";
 
@@ -30,6 +31,22 @@ export type PersistedState = {
   sshPublicKey?: string;
 };
 
+export class StateLoadError extends Error {
+  readonly code = "corrupt-state";
+  constructor(message: string) {
+    super(message);
+    this.name = "StateLoadError";
+  }
+}
+
+export class StateLockError extends Error {
+  readonly code = "concurrent-start";
+  constructor(message: string) {
+    super(message);
+    this.name = "StateLockError";
+  }
+}
+
 export function defaultState(): PersistedState {
   return { version: STATE_VERSION, setupStep: "auth", sessions: [] };
 }
@@ -42,21 +59,96 @@ export function identityPath(dir: string): string {
   return join(dir, "ssh", "id_ed25519");
 }
 
+export function setupLockPath(dir: string): string {
+  return join(dir, "setup.lock");
+}
+
+export function stateWriteLockPath(dir: string): string {
+  return join(dir, "state.write.lock");
+}
+
 export async function loadState(dir: string): Promise<PersistedState> {
+  const path = statePath(dir);
+  let raw: string;
   try {
-    const raw = await readFile(statePath(dir), "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    const state = asPersistedState(parsed);
-    return state ?? defaultState();
-  } catch {
-    return defaultState();
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if (isErrno(error, "ENOENT")) return defaultState();
+    throw new StateLoadError(
+      `state.json exists but cannot be read (${errorMessage(error)}). Refusing first-run create so a duplicate VM cannot be launched.`,
+    );
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    throw new StateLoadError(
+      "state.json is corrupt JSON. Refusing to treat this as a first run. Inspect the file; do not delete it to force another create unless you have confirmed no VM exists.",
+    );
+  }
+  const state = asPersistedState(parsed);
+  if (!state) {
+    throw new StateLoadError(
+      "state.json failed strict validation. Refusing first-run create. Ambiguous or partial state must be inspected, not overwritten.",
+    );
+  }
+  return state;
 }
 
 export async function saveState(dir: string, state: PersistedState): Promise<void> {
+  const parsed = asPersistedState(state);
+  if (!parsed) {
+    throw new StateLoadError("refusing to write invalid Pi Cloud state");
+  }
+  await mkdir(dir, { recursive: true, mode: 0o700 });
   const path = statePath(dir);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  const tmp = join(dir, `state.json.tmp.${process.pid}.${randomBytes(4).toString("hex")}`);
+  try {
+    await writeFile(tmp, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 });
+    await rename(tmp, path);
+  } catch (error) {
+    await rm(tmp, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function withExclusiveLock<T>(lockPath: string, work: () => Promise<T>): Promise<T> {
+  await acquireExclusiveLock(lockPath);
+  try {
+    return await work();
+  } finally {
+    await releaseExclusiveLock(lockPath);
+  }
+}
+
+export async function acquireExclusiveLock(lockPath: string): Promise<void> {
+  await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
+  try {
+    await mkdir(lockPath, { recursive: false, mode: 0o700 });
+  } catch (error) {
+    if (isErrno(error, "EEXIST")) {
+      throw new StateLockError(
+        `exclusive lock already exists at ${lockPath}. Another pi --cloud may be in flight. If no other process is running, inspect that lock and remove it only after you confirm no create is in flight. Automatic steal is refused.`,
+      );
+    }
+    throw error;
+  }
+}
+
+export async function releaseExclusiveLock(lockPath: string): Promise<void> {
+  await rm(lockPath, { recursive: true, force: true });
+}
+
+export async function updateState(
+  dir: string,
+  mutate: (state: PersistedState) => PersistedState | Promise<PersistedState>,
+): Promise<PersistedState> {
+  return await withExclusiveLock(stateWriteLockPath(dir), async () => {
+    const current = await loadState(dir);
+    const next = await mutate(current);
+    await saveState(dir, next);
+    return next;
+  });
 }
 
 export function createFileRegistry(dir: string): SessionRegistry {
@@ -67,10 +159,11 @@ export function createFileRegistry(dir: string): SessionRegistry {
       return record ? { ...record } : undefined;
     },
     async put(record) {
-      const state = await loadState(dir);
-      const next = state.sessions.filter((session) => session.id !== record.id);
-      next.push({ ...record });
-      await saveState(dir, { ...state, sessions: next });
+      await updateState(dir, (state) => {
+        const next = state.sessions.filter((session) => session.id !== record.id);
+        next.push({ ...record });
+        return { ...state, sessions: next };
+      });
     },
     async list(query = {}) {
       const state = await loadState(dir);
@@ -84,19 +177,23 @@ export function createFileRegistry(dir: string): SessionRegistry {
   };
 }
 
-function asPersistedState(value: unknown): PersistedState | undefined {
+export function asPersistedState(value: unknown): PersistedState | undefined {
   if (!isRecord(value) || value.version !== STATE_VERSION) return undefined;
   const setupStep = value.setupStep;
   if (setupStep !== "auth" && setupStep !== "discover" && setupStep !== "enroll" && setupStep !== "ready") {
     return undefined;
   }
-  const sessions = Array.isArray(value.sessions) ? value.sessions.filter(isSessionRecord) : [];
+  if (!Array.isArray(value.sessions) || !value.sessions.every(isSessionRecord)) return undefined;
+  if (value.host !== undefined && !isPersistedHost(value.host)) return undefined;
+  if ((setupStep === "enroll" || setupStep === "ready") && !isPersistedHost(value.host)) return undefined;
+  if (value.identityFile !== undefined && typeof value.identityFile !== "string") return undefined;
+  if (value.sshPublicKey !== undefined && typeof value.sshPublicKey !== "string") return undefined;
   const host = isPersistedHost(value.host) ? value.host : undefined;
   return {
     version: STATE_VERSION,
     setupStep,
     host,
-    sessions,
+    sessions: value.sessions.filter(isSessionRecord),
     identityFile: typeof value.identityFile === "string" ? value.identityFile : undefined,
     sshPublicKey: typeof value.sshPublicKey === "string" ? value.sshPublicKey : undefined,
   };
@@ -106,11 +203,15 @@ function isPersistedHost(value: unknown): value is PersistedHost {
   if (!isRecord(value)) return false;
   return (
     typeof value.id === "string" &&
+    value.id.length > 0 &&
     typeof value.ocid === "string" &&
+    value.ocid.length > 0 &&
     typeof value.address === "string" &&
     typeof value.user === "string" &&
+    value.user.length > 0 &&
     typeof value.expectedHostKey === "string" &&
-    typeof value.displayName === "string"
+    typeof value.displayName === "string" &&
+    value.displayName.length > 0
   );
 }
 
@@ -128,4 +229,12 @@ function isSessionRecord(value: unknown): value is SessionRecord {
     typeof value.status === "string" &&
     value.worktreesOwnedBy === "subagents"
   );
+}
+
+function isErrno(error: unknown, code: string): boolean {
+  return isRecord(error) && error.code === code;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
 }

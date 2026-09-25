@@ -7,7 +7,7 @@ import {
   type StartupOutcome,
 } from "./setup.ts";
 import { formatCloudStatus, inspectCloudStatus } from "./status.ts";
-import { DEFAULT_STATE_DIR, loadState } from "./state.ts";
+import { DEFAULT_STATE_DIR, loadState, StateLoadError } from "./state.ts";
 
 export type { CloudRuntime };
 
@@ -29,7 +29,14 @@ export function registerCloudExtension(pi: ExtensionAPI, runtime: CloudRuntime =
   pi.registerCommand("cloud", {
     description: "Show read-only Pi Cloud status",
     handler: async (_args, ctx) => {
-      const persisted = await loadState(runtime.stateDir ?? DEFAULT_STATE_DIR);
+      let persisted;
+      try {
+        persisted = await loadState(runtime.stateDir ?? DEFAULT_STATE_DIR);
+      } catch (error) {
+        const message = error instanceof StateLoadError ? error.message : "Pi Cloud state is unreadable";
+        ctx.ui.notify(message, "error");
+        return;
+      }
       const status = await inspectCloudStatus({
         cwd: ctx.cwd,
         run: runtime.run,
@@ -53,38 +60,47 @@ export default function (pi: ExtensionAPI): void {
   registerCloudExtension(pi);
 }
 
-async function handleCloudFlag(pi: ExtensionAPI, ctx: ExtensionContext, runtime: CloudRuntime): Promise<void> {
-  if (ctx.mode !== "tui" || !ctx.hasUI) {
-    ctx.ui.notify(
-      "pi --cloud requires an interactive TUI. Refusing to fall back to local tools.",
-      "error",
-    );
+export async function handleCloudFlag(pi: ExtensionAPI, ctx: ExtensionContext, runtime: CloudRuntime): Promise<void> {
+  try {
+    if (ctx.mode !== "tui" || !ctx.hasUI) {
+      ctx.ui.notify(
+        "pi --cloud requires an interactive TUI. Refusing to fall back to local tools.",
+        "error",
+      );
+      return;
+    }
+
+    const outcome = await runCloudStartup({
+      cwd: ctx.cwd,
+      repo: stringFlag(pi.getFlag("repo")),
+      branch: stringFlag(pi.getFlag("branch")),
+      ui: ctx.ui,
+      runtime: {
+        ...runtime,
+        interactive: runtime.interactive ?? ((argv) => suspendTerminal(ctx, () => spawnInherit(argv))),
+      },
+    });
+
+    if (outcome.status !== "ready") {
+      await presentFailure(ctx, outcome);
+      return;
+    }
+
+    const attached = await suspendTerminal(ctx, () => outcome.prepared.attach());
+    const message = describeAttach(attached.status, attached.blockers.map((blocker) => blocker.message));
+    if (attached.status === "detached") ctx.ui.notify(message, "info");
+    else ctx.ui.notify(message, "warning");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Pi Cloud startup failed";
+    ctx.ui.notify(`Pi Cloud failed closed: ${message}. Local tools are not used.`, "error");
+    try {
+      await ctx.ui.confirm("Pi Cloud blocked", message);
+    } catch {
+      // still shut down below
+    }
+  } finally {
     ctx.shutdown();
-    return;
   }
-
-  const outcome = await runCloudStartup({
-    cwd: ctx.cwd,
-    repo: stringFlag(pi.getFlag("repo")),
-    branch: stringFlag(pi.getFlag("branch")),
-    ui: ctx.ui,
-    runtime: {
-      ...runtime,
-      interactive: runtime.interactive ?? ((argv) => suspendTerminal(ctx, () => spawnInherit(argv))),
-    },
-  });
-
-  if (outcome.status !== "ready") {
-    await presentFailure(ctx, outcome);
-    ctx.shutdown();
-    return;
-  }
-
-  const attached = await suspendTerminal(ctx, () => outcome.prepared.attach());
-  const message = describeAttach(attached.status, attached.blockers.map((blocker) => blocker.message));
-  if (attached.status === "detached") ctx.ui.notify(message, "info");
-  else ctx.ui.notify(message, "warning");
-  ctx.shutdown();
 }
 
 async function presentFailure(

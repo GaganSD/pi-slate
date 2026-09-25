@@ -26,8 +26,8 @@ pi --cloud --repo OWNER/REPO --branch main
 | --- | --- |
 | `pi` | Ordinary local Pi. Cloud does nothing. |
 | `pi --cloud` | Infer `origin` and the current branch; attach the matching remote session. Several matches open a picker that includes **New session**. First use runs guided setup. |
-| `--repo <owner/repo\|url>` | Explicit remote repository instead of local `origin`. Local files are never copied. |
-| `--branch <name>` | Base branch. Work happens on an isolated `pi/<session-id>` branch, never on `main`. |
+| `--repo <owner/repo\|url>` | Explicit remote repository instead of local `origin`. Local files are never copied. Without `--branch`, the base is the current local branch when that checkout matches the repo, otherwise the remote default HEAD. `main` is never invented. |
+| `--branch <name>` | Explicit base branch. Work happens on an isolated `pi/<session-id>` branch, never directly on `main`. |
 | `/cloud` | Read-only status inside remote Pi: host, repo/path, branches, exact session, and whether commits are only local. Unknown state is shown as unknown, not idle. |
 
 Detaching from tmux leaves remote Pi running. `pi --cloud` is the reattach path. Do not overload local `--resume` with a remote meaning.
@@ -36,7 +36,7 @@ Detaching from tmux leaves remote Pi running. `pi --cloud` is the reattach path.
 
 1. Browser-authenticate the OCI CLI profile **`PI_CLOUD`** (`security_token`). The CLI holds the token; this package does not read `~/.oci` secrets.
 2. Show the account and home region. Adopt an existing approved A1 host when one matches.
-3. Create a free-only A1 VM only after an eligibility report and explicit confirmation. Failed free allocation never becomes paid.
+3. Create a free-only A1 VM only after an eligibility report and explicit confirmation. `FREE_TIER` includes trial accounts and is not a blanket Always Free proof; eligibility is independently bounded. The confirm dialog names the verified platform image and OCID. Failed free allocation never becomes paid.
 4. Pin the guest Ubuntu sshd host key from independently authenticated **cloud-init console-history** before any SSH command. Serial-console service keys are refused. If enrollment cannot be done safely, setup stays blocked and never uses `accept-new`.
 5. Clone the remote git URL on the VM and start Pi in tmux. Local model credentials are not copied; sign in on the VM.
 
@@ -52,7 +52,7 @@ You must do these on your machine. This package’s tests stay offline.
 4. Complete the `PI_CLOUD` browser login for your tenancy **home** region.
 5. Confirm adopt or, only if eligible, confirm create. Review the planned writes.
 6. If host-key enrollment blocks, capture cloud-init console history after first boot and re-run. Do not accept a changed host key.
-7. If the VM is missing Node 20+, git, tmux, or `pi`, install them **on the VM** from sources you trust, then re-run `pi --cloud`.
+7. If the VM is missing Node.js >= 22.19, git, tmux, or `pi`, install them **on the VM** from sources you trust, then re-run `pi --cloud`.
 8. In the remote Pi session, log into your model provider there. Optionally install this package on the VM if you want `/cloud` status.
 
 ## Safety

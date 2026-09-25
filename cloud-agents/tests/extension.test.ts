@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { registerCloudExtension } from "../src/index.ts";
+import { handleCloudFlag, registerCloudExtension } from "../src/index.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -30,7 +31,7 @@ function fakePi(flags: Record<string, boolean | string | undefined> = {}) {
     sendMessage() {},
   };
   const ctx = {
-    mode: "print" as const,
+    mode: "print" as "print" | "tui",
     hasUI: false,
     cwd: process.cwd(),
     ui: {
@@ -105,4 +106,25 @@ test("README documents local install and PI_CLOUD browser auth", async () => {
   assert.match(readme, /pi --cloud/);
   assert.match(readme, /--repo/);
   assert.match(readme, /--branch/);
+  assert.match(readme, /22\.19/);
+  assert.match(readme, /remote default HEAD/);
+});
+
+test("thrown startup still shuts down local Pi", async () => {
+  const fake = fakePi({ cloud: true });
+  fake.ctx.mode = "tui";
+  fake.ctx.hasUI = true;
+  const stateDir = await mkdtemp(join(tmpdir(), "pi-cloud-ext-"));
+  await mkdir(join(stateDir, "ssh"), { recursive: true });
+  await writeFile(join(stateDir, "ssh", "id_ed25519.pub"), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIlocalfixture pi-cloud\n");
+  await handleCloudFlag(fake.pi as never, fake.ctx as never, {
+    stateDir,
+    oci: {
+      async preflight() {
+        throw new Error("oci exploded");
+      },
+    } as never,
+  });
+  assert.equal(fake.shutdowns(), 1);
+  assert.match(fake.notifies.join("\n"), /failed closed|oci exploded/i);
 });

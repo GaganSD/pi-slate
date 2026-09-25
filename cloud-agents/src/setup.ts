@@ -11,6 +11,7 @@ import {
   isOperatorSshCidr,
   OCI_AUTH,
   OCI_PROFILE,
+  spawnCommand,
   type AccountSnapshot,
   type CommandResult,
   type CommandRunner,
@@ -22,6 +23,7 @@ import { enrollGuestSshHostKey } from "./host-key.ts";
 import {
   createRemoteTransport,
   looksLikeSecretTransfer,
+  MIN_REMOTE_NODE,
   type AttachResult,
   type PinnedHost,
   type RemoteBlocker,
@@ -34,7 +36,11 @@ import {
   DEFAULT_STATE_DIR,
   identityPath,
   loadState,
-  saveState,
+  setupLockPath,
+  StateLoadError,
+  StateLockError,
+  updateState,
+  withExclusiveLock,
   type PersistedHost,
   type PersistedState,
 } from "./state.ts";
@@ -79,9 +85,13 @@ export type StartupOutcome =
 
 const NEW_SESSION = "New session";
 
+export function resolveCloudRun(runtime?: CloudRuntime): CommandRunner {
+  return runtime?.run ?? spawnCommand;
+}
+
 export async function runCloudStartup(request: StartupRequest): Promise<StartupOutcome> {
   const stateDir = request.runtime?.stateDir ?? DEFAULT_STATE_DIR;
-  const run = request.runtime?.run;
+  const run = resolveCloudRun(request.runtime);
   const registry = request.runtime?.registry ?? createFileRegistry(stateDir);
   const oci = request.runtime?.oci ?? createOciProvider({ run });
   const remote =
@@ -93,7 +103,12 @@ export async function runCloudStartup(request: StartupRequest): Promise<StartupO
     });
   const ctx = { request, stateDir, run, registry, oci, remote };
 
-  let state = await loadState(stateDir);
+  let state: PersistedState;
+  try {
+    state = await loadState(stateDir);
+  } catch (error) {
+    return stateFailure(error);
+  }
   const identity = await ensureIdentity(ctx, state);
   if (identity.status !== "ok") return identity;
   state = identity.state;
@@ -102,7 +117,15 @@ export async function runCloudStartup(request: StartupRequest): Promise<StartupO
   if (account.status !== "ok") return account;
   state = account.state;
 
-  const host = await ensureHost(ctx, state, account.account);
+  let host: { status: "ok"; state: PersistedState } | StartupOutcome;
+  try {
+    host = await withExclusiveLock(setupLockPath(stateDir), async () => {
+      const latest = await loadState(stateDir);
+      return await ensureHost(ctx, latest, account.account);
+    });
+  } catch (error) {
+    return stateFailure(error);
+  }
   if (host.status !== "ok") return host;
   state = host.state;
 
@@ -128,14 +151,14 @@ async function ensureIdentity(
   const pubFile = `${keyFile}.pub`;
   const existing = await readOptional(pubFile);
   if (existing) {
-    const next = { ...state, identityFile: keyFile, sshPublicKey: existing.trim() };
-    await saveState(ctx.stateDir, next);
+    const next = await updateState(ctx.stateDir, (current) => ({
+      ...current,
+      identityFile: keyFile,
+      sshPublicKey: existing.trim(),
+    }));
     return { status: "ok", state: next };
   }
-  if (!ctx.run) {
-    return blocked("permissions", "cannot generate a dedicated SSH key without a command runner", "install OpenSSH and re-run pi --cloud");
-  }
-  await mkdir(dirname(keyFile), { recursive: true });
+  await mkdir(dirname(keyFile), { recursive: true, mode: 0o700 });
   const generated = await ctx.run([
     "ssh-keygen",
     "-t",
@@ -158,8 +181,11 @@ async function ensureIdentity(
   await writeFile(keyFile, await readFile(keyFile), { mode: 0o600 }).catch(() => undefined);
   const pub = (await readOptional(pubFile))?.trim();
   if (!pub) return blocked("permissions", "ssh-keygen did not write a public key");
-  const next = { ...state, identityFile: keyFile, sshPublicKey: pub };
-  await saveState(ctx.stateDir, next);
+  const next = await updateState(ctx.stateDir, (current) => ({
+    ...current,
+    identityFile: keyFile,
+    sshPublicKey: pub,
+  }));
   return { status: "ok", state: next };
 }
 
@@ -169,8 +195,10 @@ async function ensureAuthenticated(
 ): Promise<{ status: "ok"; account: AccountSnapshot; state: PersistedState } | StartupOutcome> {
   const first = await ctx.oci.preflight();
   if (first.authenticated && first.tenancyId && first.homeRegion) {
-    const next = { ...state, setupStep: "discover" as const };
-    await saveState(ctx.stateDir, next);
+    const next = await updateState(ctx.stateDir, (current) => ({
+      ...current,
+      setupStep: current.setupStep === "auth" ? "discover" : current.setupStep,
+    }));
     return { status: "ok", account: first, state: next };
   }
 
@@ -209,8 +237,10 @@ async function ensureAuthenticated(
       `run: ${argv.join(" ")}  then re-run pi --cloud`,
     );
   }
-  const next = { ...state, setupStep: "discover" as const };
-  await saveState(ctx.stateDir, next);
+  const next = await updateState(ctx.stateDir, (current) => ({
+    ...current,
+    setupStep: current.setupStep === "auth" ? "discover" : current.setupStep,
+  }));
   return { status: "ok", account, state: next };
 }
 
@@ -228,7 +258,7 @@ async function ensureHost(
         "Inspect the tenancy. Do not create another VM automatically. Remove ~/.pi/cloud-agents/state.json only if you intend to start over.",
       );
     }
-    const address = await resolvePublicIp(ctx, discovered.adopted, account) ?? state.host.address;
+    const address = state.host.address || (await resolvePublicIp(ctx, discovered.adopted, account)) || "";
     if (!address) {
       return blocked(
         "unreachable",
@@ -236,12 +266,23 @@ async function ensureHost(
         "Wait for the VNIC address, then re-run pi --cloud. Another VM will not be created.",
       );
     }
-    const next = {
-      ...state,
-      setupStep: state.setupStep === "auth" ? ("enroll" as const) : state.setupStep,
-      host: { ...state.host, address, ocid: discovered.adopted.id, displayName: discovered.adopted.displayName },
-    };
-    await saveState(ctx.stateDir, next);
+    const adopted = discovered.adopted;
+    const next = await updateState(ctx.stateDir, (current) => {
+      const previous = current.host ?? state.host;
+      if (!previous) {
+        throw new StateLoadError("saved host disappeared while the setup lock was held");
+      }
+      return {
+        ...current,
+        setupStep: current.setupStep === "auth" ? "enroll" : current.setupStep,
+        host: {
+          ...previous,
+          address,
+          ocid: adopted.id,
+          displayName: adopted.displayName,
+        },
+      };
+    });
     return { status: "ok", state: next };
   }
 
@@ -293,7 +334,7 @@ async function ensureHost(
     publicSshCidr: cidr,
     sshPublicKey: state.sshPublicKey,
     confirm: async (_action, details) =>
-      ctx.request.ui.confirm("Create Always Free A1 VM?", formatCreateConfirmation(report.account, details)),
+      ctx.request.ui.confirm("Create eligible A1 VM?", formatCreateConfirmation(report.account, details)),
   });
   return await persistCreated(ctx, state, created, account);
 }
@@ -328,8 +369,8 @@ async function persistHost(
   instance: InstanceSummary,
   account: AccountSnapshot,
 ): Promise<{ status: "ok"; state: PersistedState } | StartupOutcome> {
-  const address = await resolvePublicIp(ctx, instance, account) ?? "";
-  const operatingSystem = await resolveOperatingSystem(ctx, instance, account);
+  const address = (state.host?.address || (await resolvePublicIp(ctx, instance, account))) ?? "";
+  const operatingSystem = state.host?.operatingSystem ?? (await resolveOperatingSystem(ctx, instance, account));
   const host: PersistedHost = {
     id: hostIdFromOcid(instance.id),
     ocid: instance.id,
@@ -341,8 +382,11 @@ async function persistHost(
     region: account.homeRegion,
     operatingSystem,
   };
-  const next = { ...state, setupStep: "enroll" as const, host };
-  await saveState(ctx.stateDir, next);
+  const next = await updateState(ctx.stateDir, (current) => ({
+    ...current,
+    setupStep: "enroll",
+    host: { ...host, expectedHostKey: current.host?.expectedHostKey || host.expectedHostKey },
+  }));
   if (!address) {
     return blocked(
       "unreachable",
@@ -359,7 +403,6 @@ async function ensurePinned(
 ): Promise<{ status: "ok"; pinned: PinnedHost; state: PersistedState } | StartupOutcome> {
   const host = state.host;
   if (!host) return blocked("unpinned-host", "no host is saved to enroll");
-  if (!ctx.run) return blocked("unpinned-host", "cannot read console history without a command runner");
 
   const enrolled = await enrollGuestSshHostKey({
     run: ctx.run,
@@ -385,12 +428,11 @@ async function ensurePinned(
       "SSH is blocked until the guest sshd key can be pinned from cloud-init console-history. accept-new is never used.",
     );
   }
-  const next = {
-    ...state,
-    setupStep: "ready" as const,
-    host: { ...host, expectedHostKey: enrolled.pinned.host.expectedHostKey },
-  };
-  await saveState(ctx.stateDir, next);
+  const next = await updateState(ctx.stateDir, (current) => ({
+    ...current,
+    setupStep: "ready",
+    host: { ...(current.host ?? host), expectedHostKey: enrolled.pinned.host.expectedHostKey },
+  }));
   return { status: "ok", pinned: enrolled.pinned, state: next };
 }
 
@@ -469,7 +511,7 @@ async function ensureSession(
       missingTools
         ? [
             "The guest sshd key is pinned, but required remote tools are missing.",
-            "Install Node.js 20+ for linux-arm64 from a source you trust, then:",
+            `Install Node.js >= ${MIN_REMOTE_NODE} for linux-arm64 from a source you trust, then:`,
             "  sudo apt-get update && sudo apt-get install -y git tmux",
             "  npm install -g @earendil-works/pi-coding-agent",
             "Sign in to the model provider on the VM. Local laptop credentials are not copied.",
@@ -561,14 +603,20 @@ async function resolveOperatingSystem(
 export function formatCreateConfirmation(account: AccountSnapshot, details: unknown): string {
   const record = asRecord(details) ?? {};
   const intended = asRecord(record.intended) ?? {};
+  const image = asRecord(record.image) ?? {};
+  const imageId = asString(image.id) ?? asString(intended.imageId) ?? "unknown";
+  const imageName = asString(image.displayName) ?? asString(intended.imageName) ?? "unknown";
   const planned = Array.isArray(record.plannedWrites)
     ? record.plannedWrites.filter((item): item is string => typeof item === "string")
     : [];
   return [
     `Account plan: ${account.billingPlan} (${account.evidence})`,
+    "FREE_TIER includes trial accounts; it is not a blanket Always Free proof.",
+    "Eligibility is independently bounded by home-region A1 headroom, a verified AVAILABLE platform image, storage, and operator /32 SSH.",
     `Home region: ${account.homeRegion ?? "unknown"}`,
     `Shape: ${asString(intended.shape) ?? A1_SHAPE} ${asString(String(intended.ocpus ?? A1_OCPUS))} OCPU / ${asString(String(intended.memoryGb ?? A1_MEMORY_GB))} GB`,
-    `Boot volume: ${asString(String(intended.bootVolumeGb ?? "")) || "default"} GB of ${ALWAYS_FREE_STORAGE_GB} GB Always Free storage`,
+    `Platform image: ${imageName} (${imageId})`,
+    `Boot volume: ${asString(String(intended.bootVolumeGb ?? "")) || "default"} GB of ${ALWAYS_FREE_STORAGE_GB} GB Always Free compute/boot/block target`,
     `Temporary SSH source: ${asString(intended.sshCidr) ?? "missing"}`,
     "Planned writes:",
     ...planned.map((item) => `- ${item}`),
@@ -604,6 +652,24 @@ function blockedList(blockers: Array<{ code: string; message: string }>, next?: 
   return { status: "blocked", blockers, next };
 }
 
+function stateFailure(error: unknown): StartupOutcome {
+  if (error instanceof StateLockError) {
+    return blocked(error.code, error.message, "Do not start another create. Inspect the lock directory first.");
+  }
+  if (error instanceof StateLoadError) {
+    return blocked(
+      error.code,
+      error.message,
+      "Inspect state.json. Do not delete it to force another create unless you have confirmed no VM exists.",
+    );
+  }
+  return blocked(
+    "corrupt-state",
+    error instanceof Error ? error.message : "Pi Cloud state could not be loaded",
+    "Setup failed closed. Local tools are not used as a fallback.",
+  );
+}
+
 async function readOptional(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, "utf8");
@@ -621,7 +687,7 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 type RuntimeCtx = {
   request: StartupRequest;
   stateDir: string;
-  run?: CommandRunner;
+  run: CommandRunner;
   registry: SessionRegistry;
   oci: OciProvider;
   remote: RemoteTransport;
