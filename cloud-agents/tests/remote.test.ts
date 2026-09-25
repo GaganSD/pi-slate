@@ -60,6 +60,7 @@ type RemoteState = {
   dirs: Set<string>;
   locks: Set<string>;
   repos: Set<string>;
+  origins: Map<string, string>;
   branches: Map<string, string>;
   branchNames: Map<string, Set<string>>;
   sshError?: CommandResult;
@@ -78,6 +79,7 @@ function createRemoteState(overrides: Partial<RemoteState> = {}): RemoteState {
     dirs: new Set(),
     locks: new Set(),
     repos: new Set(),
+    origins: new Map(),
     branches: new Map(),
     branchNames: new Map(),
     ...overrides,
@@ -144,9 +146,14 @@ function handleRemote(state: RemoteState, command: readonly string[]): CommandRe
     if (!dest) return fail("missing dest");
     state.repos.add(dest);
     state.dirs.add(dest);
+    state.origins.set(dest, command[4] ?? "");
     state.branches.set(dest, command[3] ?? "");
     state.branchNames.set(dest, new Set([command[3] ?? ""]));
     return ok();
+  }
+  if (command[0] === "git" && command[1] === "-C" && command[3] === "remote" && command[4] === "get-url") {
+    const origin = state.origins.get(command[2] ?? "");
+    return origin ? ok(`${origin}\n`) : fail("no origin", 128);
   }
   if (command[0] === "git" && command[1] === "-C" && command[3] === "rev-parse") {
     return state.repos.has(command[2] ?? "") ? ok("true\n") : fail("not a git repo");
@@ -676,6 +683,7 @@ test("existing session branch is checked out without force-moving", async () => 
   const state = createRemoteState();
   state.repos.add(work);
   state.dirs.add(work);
+  state.origins.set(work, REPO);
   state.branches.set(work, "pi/sess01");
   state.branchNames.set(work, new Set(["main", "pi/sess01"]));
   const { transport, log } = await setup({ state });
@@ -700,5 +708,48 @@ test("existing session branch is checked out without force-moving", async () => 
       return remote[0] === "git" && remote.includes("checkout") && remote.at(-1) === "pi/sess01" && !remote.includes("-b");
     }),
     true,
+  );
+});
+
+test("mismatched existing worktree origin blocks before checkout, tmux start, or pi", async () => {
+  const work = "/home/ubuntu/pi-cloud/sessions/sess01/work";
+  const state = createRemoteState();
+  state.repos.add(work);
+  state.dirs.add(work);
+  state.origins.set(work, "https://github.com/evil/other.git");
+  state.branches.set(work, "main");
+  state.branchNames.set(work, new Set(["main"]));
+  const { transport, log } = await setup({ state });
+  const pinned = await pinOk(transport);
+  const started = await transport.start({
+    pinned,
+    repo: "acme/proj",
+    branch: "main",
+    sessionId: "sess01",
+  });
+  assert.equal(started.status, "blocked");
+  assert.equal(started.status === "blocked" && started.blockers[0]?.code, "repo-mismatch");
+  assert.equal(state.origins.get(work), "https://github.com/evil/other.git");
+  assert.equal(state.repos.has(work), true);
+  assert.equal(
+    log.some((argv) => {
+      const remote = remoteArgv(argv);
+      return remote[0] === "git" && remote.includes("checkout");
+    }),
+    false,
+  );
+  assert.equal(
+    log.some((argv) => {
+      const remote = remoteArgv(argv);
+      return remote[0] === "tmux" && remote[1] === "new-session";
+    }),
+    false,
+  );
+  assert.equal(
+    log.some((argv) => {
+      const remote = remoteArgv(argv);
+      return remote[0] === "pi" && remote[1] !== "--version";
+    }),
+    false,
   );
 });

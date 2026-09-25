@@ -69,6 +69,7 @@ export type RemoteBlockerCode =
   | "stale-session"
   | "wrong-arch"
   | "missing-tool"
+  | "repo-mismatch"
   | "unknown-status";
 
 export type RemoteBlocker = {
@@ -980,7 +981,31 @@ async function ensureRemoteRepo(
   record: SessionRecord,
 ): Promise<{ ok: true } | { ok: false; blockers: RemoteBlocker[] }> {
   const existing = await ssh(["git", "-C", record.remotePath, "rev-parse", "--is-inside-work-tree"]);
-  if (existing.code !== 0) {
+  if (existing.code === 0) {
+    const origin = await ssh(["git", "-C", record.remotePath, "remote", "get-url", "origin"]);
+    if (origin.code !== 0 || !origin.stdout.trim()) {
+      return {
+        ok: false,
+        blockers: [
+          blocker(
+            "repo-mismatch",
+            "existing remote worktree origin is unknown; refusing to reuse or overwrite",
+          ),
+        ],
+      };
+    }
+    if (!sameRepo(origin.stdout.trim(), record.repo)) {
+      return {
+        ok: false,
+        blockers: [
+          blocker(
+            "repo-mismatch",
+            "existing remote worktree origin does not match the selected repo; refusing to overwrite",
+          ),
+        ],
+      };
+    }
+  } else {
     const cloned = await ssh(["git", "clone", "--branch", record.baseBranch, record.repo, record.remotePath]);
     if (cloned.code !== 0) {
       return {
