@@ -555,3 +555,124 @@ test("200 GB aggregate is boot+block only; backups are a separate five-slot allo
   assert.equal(report.inventory.storageGb, 0);
   assert.equal(log.some((argv) => argv.includes("backup")), false);
 });
+
+test("plan flip after confirm blocks create with zero writes", async () => {
+  const log: string[][] = [];
+  let afterConfirm = false;
+  const provider = createOciProvider({
+    run: fakeRunner(
+      {
+        "osp-gateway subscription-service subscription list": () =>
+          subscriptions(afterConfirm ? "PAYG" : "FREE_TIER"),
+      },
+      log,
+    ),
+  });
+  const result = await provider.create(
+    request({
+      confirm: async () => {
+        afterConfirm = true;
+        return true;
+      },
+    }),
+  );
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "payg-plan"), true);
+  assert.equal(log.some((argv) => isMutatingArgv(argv)), false);
+});
+
+test("A1 inventory change after confirm blocks create with zero writes", async () => {
+  const log: string[][] = [];
+  let afterConfirm = false;
+  const provider = createOciProvider({
+    run: fakeRunner(
+      {
+        "compute instance list": () => ok(afterConfirm ? [liveA1()] : []),
+      },
+      log,
+    ),
+  });
+  const result = await provider.create(
+    request({
+      confirm: async () => {
+        afterConfirm = true;
+        return true;
+      },
+    }),
+  );
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "preexisting-a1-usage"), true);
+  assert.equal(log.some((argv) => isMutatingArgv(argv)), false);
+});
+
+test("selected image change after confirm does not switch images or write", async () => {
+  const log: string[][] = [];
+  let afterConfirm = false;
+  const provider = createOciProvider({
+    run: fakeRunner(
+      {
+        "compute image list": () =>
+          ok([
+            {
+              id: afterConfirm ? "ocid1.image.oc1..other" : IMAGE,
+              "operating-system": "Canonical Ubuntu",
+              "display-name": afterConfirm ? "Canonical-Ubuntu-24.04" : "Canonical-Ubuntu-22.04",
+              "compartment-id": null,
+              "lifecycle-state": "AVAILABLE",
+            },
+          ]),
+      },
+      log,
+    ),
+  });
+  const result = await provider.create(
+    request({
+      confirm: async () => {
+        afterConfirm = true;
+        return true;
+      },
+    }),
+  );
+  assert.equal(result.status, "blocked");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "stale-eligibility"), true);
+  assert.match(result.blockers[0]?.message ?? "", /imageId/);
+  assert.equal(log.some((argv) => isMutatingArgv(argv)), false);
+  assert.equal(log.some((argv) => argv.includes("ocid1.image.oc1..other") && argv.includes("launch")), false);
+});
+
+test("instance appearing after confirm must be adopted on a separate run", async () => {
+  const log: string[][] = [];
+  let afterConfirm = false;
+  const provider = createOciProvider({
+    run: fakeRunner(
+      {
+        "compute instance list": () =>
+          ok(
+            afterConfirm
+              ? [
+                  liveA1({
+                    id: "ocid1.instance.oc1..new",
+                    "display-name": DEFAULT_DISPLAY_NAME,
+                    "freeform-tags": { "managed-by": MANAGED_BY },
+                  }),
+                ]
+              : [],
+          ),
+      },
+      log,
+    ),
+  });
+  const result = await provider.create(
+    request({
+      confirm: async () => {
+        afterConfirm = true;
+        return true;
+      },
+    }),
+  );
+  assert.equal(result.status, "blocked");
+  assert.notEqual(result.status, "adopted");
+  assert.equal(result.blockers.some((blocker) => blocker.code === "stale-eligibility"), true);
+  assert.match(result.blockers[0]?.message ?? "", /separate run/);
+  assert.equal(log.some((argv) => isMutatingArgv(argv)), false);
+});

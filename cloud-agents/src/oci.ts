@@ -73,7 +73,8 @@ export type BlockerCode =
   | "ownership"
   | "permissions"
   | "ambiguous-instance"
-  | "boot-size";
+  | "boot-size"
+  | "stale-eligibility";
 
 export type Blocker = {
   code: BlockerCode;
@@ -513,7 +514,20 @@ export function createOciProvider(options: OciProviderOptions = {}): OciProvider
       };
     }
 
-    const region = report.account.homeRegion;
+    const latest = await evaluateCreate(request);
+    const stale = postConfirmBlockers(report, latest);
+    if (stale.length > 0) {
+      return {
+        status: "blocked",
+        blockers: stale,
+        partial: volumePartials(latest.inventory.volumes),
+        plannedWrites: latest.plannedWrites,
+        account: latest.account,
+        inventory: latest.inventory,
+      };
+    }
+
+    const region = intended.region;
     const tenancyId = report.account.tenancyId;
     const partial: PartialAllocation[] = [];
     const network = await ensureNetwork(exec, {
@@ -1081,6 +1095,53 @@ function plannedWriteList(displayName: string): string[] {
     `network subnet create ${displayName}-subnet`,
     `compute instance launch ${A1_SHAPE} ${A1_OCPUS} OCPU ${A1_MEMORY_GB} GB`,
   ];
+}
+
+function postConfirmBlockers(confirmed: EligibilityReport, latest: EligibilityReport): Blocker[] {
+  if (latest.adopted) {
+    return [
+      {
+        code: "stale-eligibility",
+        message: `a matching instance ${latest.adopted.id} appeared after confirmation; adopt it on a separate run instead of creating`,
+      },
+    ];
+  }
+  if (!latest.eligible || latest.blockers.length > 0) {
+    return latest.blockers.length > 0
+      ? latest.blockers
+      : [{ code: "stale-eligibility", message: "post-confirm eligibility is ambiguous or failed" }];
+  }
+  const before = writeSpec(confirmed);
+  const after = writeSpec(latest);
+  const changed = Object.keys(before).filter((key) => before[key] !== after[key]);
+  if (changed.length > 0) {
+    return [
+      {
+        code: "stale-eligibility",
+        message: `eligibility changed after confirmation (${changed.join(", ")}); confirmed write spec preserved, no writes issued`,
+      },
+    ];
+  }
+  return [];
+}
+
+function writeSpec(report: EligibilityReport): Record<string, string> {
+  return {
+    billingPlan: report.account.billingPlan,
+    tenancyId: report.account.tenancyId ?? "",
+    homeRegion: report.account.homeRegion ?? "",
+    a1Ocpus: String(report.inventory.a1Ocpus),
+    a1MemoryGb: String(report.inventory.a1MemoryGb),
+    storageGb: String(report.inventory.storageGb),
+    imageId: report.image?.id ?? report.intended?.imageId ?? "",
+    region: report.intended?.region ?? "",
+    shape: report.intended?.shape ?? "",
+    ocpus: String(report.intended?.ocpus ?? ""),
+    memoryGb: String(report.intended?.memoryGb ?? ""),
+    bootVolumeGb: String(report.intended?.bootVolumeGb ?? ""),
+    sshCidr: report.intended?.sshCidr ?? "",
+    displayName: report.intended?.displayName ?? "",
+  };
 }
 
 function statusForBlockers(blockers: Blocker[]): CreateResult["status"] {
