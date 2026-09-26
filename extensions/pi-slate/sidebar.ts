@@ -365,15 +365,15 @@ export class Sidebar implements Component {
       this.contextData.tokensPerSec,
     );
     const resources = formatContextResources(this.contextData.spend, this.skillsLoaded, this.mcpConnected);
-    if (height === 1) return [theme ? this.body(tokens, width, theme, "muted") : tokens];
+    const paint = this.paint(theme);
+    if (height === 1) return [inscribedTitle("Context", width, paint, "bottom")];
 
-    const lines: string[] = [];
-    if (height >= 4 && theme) lines.push(this.rule(width, theme));
-    else if (height >= 4) lines.push("─".repeat(Math.max(0, width)));
-    lines.push(this.heading("Context", width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
-    while (lines.length < height) lines.push(this.decorateLine("", width, theme));
+    const lines = [inscribedTitle("Context", width, paint, "top")];
+    const body = height - 1;
+    if (lines.length < body) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
+    if (lines.length < body) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
+    while (lines.length < body) lines.push(this.decorateLine("", width, theme));
+    lines.push(inscribedTitle("", width, paint, "bottom"));
     return lines.slice(0, height);
   }
 
@@ -423,17 +423,20 @@ export class Sidebar implements Component {
     if (maxHeight < 1) return [];
     const view = this.effectiveView();
     const lines = [this.peekHeading(width, theme, view)];
-    const bodyHeight = maxHeight - 1;
-    if (bodyHeight < 1) return lines;
-    if (!view) {
-      lines.push(this.body("none", width, theme, "dim"));
-      return this.padBlock(lines, maxHeight, width, theme);
+    const close = maxHeight >= 2 ? 1 : 0;
+    const bodyHeight = maxHeight - 1 - close;
+    if (bodyHeight >= 1) {
+      if (!view) lines.push(this.body("none", width, theme, "dim"));
+      else {
+        const peek = view.render(Math.max(0, width - 2), bodyHeight);
+        for (let row = 0; row < bodyHeight; row++) {
+          lines.push(this.decorateLine(peek[row] ?? "", width, theme));
+        }
+      }
     }
-    const peek = view.render(Math.max(0, width - 2), bodyHeight);
-    for (let row = 0; row < bodyHeight; row++) {
-      lines.push(this.decorateLine(peek[row] ?? "", width, theme));
-    }
-    return lines;
+    while (lines.length < maxHeight - close) lines.push(this.decorateLine("", width, theme));
+    if (close) lines.push(inscribedTitle("", width, this.paint(theme), "bottom"));
+    return lines.slice(0, maxHeight);
   }
 
   private filesLines(width: number, maxHeight: number, theme: Theme | undefined): string[] {

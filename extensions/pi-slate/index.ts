@@ -396,7 +396,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => install(ctx));
   pi.on("agent_start", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
-    ctx.ui.setWorkingMessage(workingWords.next());
+    ctx.ui.setWorkingMessage(ctx.ui.theme.italic(workingWords.next()));
   });
   pi.on("model_select", (_event, ctx) => {
     currentContext = ctx;
