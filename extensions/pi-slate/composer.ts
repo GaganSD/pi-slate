@@ -1,7 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { CustomEditor, type KeybindingsManager, type Theme } from "@earendil-works/pi-coding-agent";
 import {
-  sliceByColumn,
   truncateToWidth,
   visibleWidth,
   type EditorTheme,
@@ -106,11 +105,13 @@ export function frameComposerLines(
 }
 
 function sideBorder(line: string, width: number, paint: (text: string) => string, prompt: boolean): string {
-  const pad = visibleWidth(line) < width ? `${line}${" ".repeat(width - visibleWidth(line))}` : line;
-  const left = prompt ? `${paint("│")} › ` : paint("│");
   const leftCols = prompt ? 4 : 1;
-  const mid = sliceByColumn(pad, leftCols, Math.max(0, width - leftCols - 1));
-  return `${left}${mid}${paint("│")}`;
+  const prefix = " ".repeat(leftCols);
+  let body = line.startsWith(prefix) ? line.slice(leftCols) : line;
+  if (body.endsWith(" ")) body = body.slice(0, -1);
+  const left = prompt ? `${paint("│")} › ` : paint("│");
+  const gap = Math.max(0, width - leftCols - 1 - visibleWidth(body));
+  return `${left}${body}${" ".repeat(gap)}${paint("│")}`;
 }
 
 export type ComposerSource = {

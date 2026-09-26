@@ -72,6 +72,19 @@ test("empty composer frames sides, prompt, and send hint", () => {
   assert.equal(visibleWidth(lines[2] ?? ""), width);
 });
 
+test("composer keeps a one-cell reverse cursor", () => {
+  const width = 24;
+  const cursorLine = `    \x1b[7m \x1b[0m${" ".repeat(width - 5)}`;
+  const lines = frameComposerLines(
+    ["╭" + "─".repeat(width - 2) + "╮", cursorLine, "╰" + "─".repeat(width - 2) + "╯"],
+    { width, empty: false, paddingX: 4, hint: COMPOSER_HINT, paint: (text) => text },
+  );
+  const body = lines[1] ?? "";
+  assert.match(body, /\x1b\[7m \x1b\[0m/);
+  assert.doesNotMatch(body, /\x1b\[7m {2,}/);
+  assert.equal(visibleWidth(body), width);
+});
+
 test("typed composer drops the prompt and hint", () => {
   const width = 20;
   const lines = frameComposerLines(
