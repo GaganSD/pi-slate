@@ -18,7 +18,7 @@ import {
   type EditorTheme,
   type TUI,
 } from "@earendil-works/pi-tui";
-import { ComposerEditor, composerPaddingX } from "./composer.ts";
+import { chromePaint, ComposerEditor, composerPaddingX } from "./composer.ts";
 import { installImagePlaceholders } from "./image-placeholders.ts";
 import { GitStatusPoller } from "./git-status.ts";
 import { fileKey, formatFileLabel } from "./files-modified.ts";
@@ -353,7 +353,7 @@ export default function piSlate(pi: ExtensionAPI): void {
     ctx.ui.setEditorComponent((tui: TUI, editorTheme: EditorTheme, keybindings: KeybindingsManager) => {
       const minimalEditorTheme: EditorTheme = {
         ...editorTheme,
-        borderColor: (text) => ctx.ui.theme.fg("borderMuted", text),
+        borderColor: chromePaint(ctx.ui.theme),
       };
       activeEditor = new ComposerEditor(
         tui,

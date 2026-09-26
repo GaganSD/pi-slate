@@ -43,7 +43,7 @@ import {
   sidebarRowSlots,
   splitSidebarContent,
 } from "./workspace-layout.ts";
-import { COMPOSER_SHELF_LINES, composerFrameLineCount, frameRow, inscribedTitle } from "./composer.ts";
+import { COMPOSER_SHELF_LINES, chromePaint, composerFrameLineCount, frameRow, inscribedTitle } from "./composer.ts";
 
 const KITTY_PREFIX = "\x1b_G";
 const CLEAR = "[clear]";
@@ -548,7 +548,7 @@ export class Sidebar implements Component {
   }
 
   private paint(theme: Theme | undefined): (text: string) => string {
-    return (text) => (theme ? theme.fg("borderMuted", text) : text);
+    return theme ? chromePaint(theme) : (text) => text;
   }
 
   private rule(width: number, theme: Theme): string {

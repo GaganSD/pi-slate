@@ -12,6 +12,10 @@ export function composerPaddingX(density: "comfortable" | "compact"): number {
   return density === "compact" ? 2 : 4;
 }
 
+export function chromePaint(theme: Theme): (text: string) => string {
+  return (text) => theme.fg("thinkingXhigh", text);
+}
+
 export const COMPOSER_SHELF_LINES = 4;
 
 let lastComposerFrameLines = COMPOSER_SHELF_LINES;
@@ -184,6 +188,14 @@ export class ComposerEditor extends CustomEditor {
   ) {
     super(tui, theme, keybindings, options);
     this.source = source;
+    // Pi assigns thinking-level colors onto editor.borderColor. Ignore those writes.
+    const paint = (text: string) => chromePaint(this.source().theme)(text);
+    Object.defineProperty(this, "borderColor", {
+      configurable: true,
+      enumerable: true,
+      get: () => paint,
+      set: () => undefined,
+    });
   }
 
   protected renderTopBorder(width: number, hiddenLineCount: number): string {

@@ -3,6 +3,7 @@ import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
+  chromePaint,
   composerLabels,
   composerPaddingX,
   frameComposerLines,
@@ -20,6 +21,18 @@ const theme = {
 test("composer padding follows density", () => {
   assert.equal(composerPaddingX("comfortable"), 4);
   assert.equal(composerPaddingX("compact"), 2);
+});
+
+test("chrome paint stays on the xhigh thinking border", () => {
+  const colors: string[] = [];
+  const painted = chromePaint({
+    fg: (name: string, text: string) => {
+      colors.push(name);
+      return text;
+    },
+  } as Theme)("─");
+  assert.equal(painted, "─");
+  assert.deepEqual(colors, ["thinkingXhigh"]);
 });
 
 test("inscribed border keeps rounded corners and truncates the right label first", () => {
