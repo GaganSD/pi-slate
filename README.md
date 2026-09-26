@@ -57,6 +57,23 @@ Slate keeps usage and spend visible at the bottom. Context usage may be estimate
   <img src="https://cdn.jsdelivr.net/npm/pi-slate@0.1.4/assets/slate-context.png" alt="Context usage, spend, skills, and MCP count" width="567" />
 </p>
 
+### Catppuccin Themes
+
+The prompt, Summary, and Context share one frame. Themes are official [Catppuccin](https://catppuccin.com/palette/) tokens only.
+
+- **Flavor:** Latte (light) or Mocha (dark)
+- **Style:** Canonical, Quiet, Mauve, Sapphire, Peach, Teal
+
+`/slate` → Theme walks flavor, then style. Or set them directly:
+
+```text
+/slate theme mocha mauve
+/slate flavor latte
+/slate style quiet
+```
+
+`flavor` and `style` keep the other axis. Selection is saved and also appears in `/settings` as `catppuccin-<flavor>-<style>`.
+
 ## Commands
 
 `/slate` with no args opens the same settings picker.
