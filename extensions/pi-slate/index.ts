@@ -18,7 +18,7 @@ import {
   type EditorTheme,
   type TUI,
 } from "@earendil-works/pi-tui";
-import { ComposerEditor, composerPaddingX } from "./composer.ts";
+import { chromePaint, ComposerEditor, composerPaddingX } from "./composer.ts";
 import { installImagePlaceholders } from "./image-placeholders.ts";
 import { GitStatusPoller } from "./git-status.ts";
 import { fileKey, formatFileLabel } from "./files-modified.ts";
@@ -33,6 +33,7 @@ import {
   MCP_STATUS_EVENT,
   PI_LOGO,
   PI_LOGO_ASCII,
+  paintLogo,
   centerOffset,
   compactPath,
   countSkillCommands,
@@ -66,7 +67,15 @@ import {
   SLATE_ISSUES_URL,
 } from "./bug.ts";
 import { syncMessageWindow, type MessageWindow } from "./message-window.ts";
-import { applySlateTheme, persistFullscreen, shouldApplyInstallDefault } from "./install-defaults.ts";
+import {
+  STYLE_LABELS,
+  STYLES,
+  resolveCatppuccinTheme,
+  themeMessage,
+  type Flavor,
+  type Style,
+} from "./catppuccin.ts";
+import { applySlateTheme, persistFullscreen, persistTheme, shouldApplyInstallDefault } from "./install-defaults.ts";
 
 type SlateConfig = {
   density: "comfortable" | "compact";
@@ -157,7 +166,7 @@ class MinimalHeader implements Component {
       : PI_LOGO;
     const column = this.columnWidth(width);
     return [
-      ...logoLines.map((line) => centeredLine(this.theme.fg("accent", line), column)),
+      ...logoLines.map((line) => centeredLine(paintLogo(line, this.theme.getColorMode() === "truecolor"), column)),
       "",
       centeredLine(this.theme.fg("muted", `Pi Agent v${VERSION}`), column),
       centeredLine(
@@ -353,7 +362,7 @@ export default function piSlate(pi: ExtensionAPI): void {
     ctx.ui.setEditorComponent((tui: TUI, editorTheme: EditorTheme, keybindings: KeybindingsManager) => {
       const minimalEditorTheme: EditorTheme = {
         ...editorTheme,
-        borderColor: (text) => ctx.ui.theme.fg("borderMuted", text),
+        borderColor: chromePaint(ctx.ui.theme),
       };
       activeEditor = new ComposerEditor(
         tui,
@@ -396,7 +405,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => install(ctx));
   pi.on("agent_start", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
-    ctx.ui.setWorkingMessage(workingWords.next());
+    ctx.ui.setWorkingMessage(ctx.ui.theme.italic(workingWords.next()));
   });
   pi.on("model_select", (_event, ctx) => {
     currentContext = ctx;
@@ -515,6 +524,30 @@ export default function piSlate(pi: ExtensionAPI): void {
     if (key === "Standard") return "standard";
     if (key === "Minimal") return "minimal";
     return undefined;
+  };
+
+  const currentCatppuccin = (ctx: ExtensionContext) => resolveCatppuccinTheme(ctx.ui.theme.name);
+
+  const pickStyle = async (ctx: ExtensionContext): Promise<Style | undefined> => {
+    const current = currentCatppuccin(ctx).style;
+    const value = await ctx.ui.select(
+      "Style",
+      STYLES.map((style) => withCurrent(STYLE_LABELS[style], style === current)),
+    );
+    if (!value) return undefined;
+    const key = withoutCurrent(value);
+    return STYLES.find((style) => STYLE_LABELS[style] === key);
+  };
+
+  const applyCatppuccin = (ctx: ExtensionContext, flavor: Flavor, style: Style): void => {
+    const next = resolveCatppuccinTheme(ctx.ui.theme.name, flavor, style);
+    const result = ctx.ui.setTheme(next.name);
+    if (!result.success) {
+      ctx.ui.notify(result.error ?? `Could not load ${next.name}. Run /reload first.`, "error");
+      return;
+    }
+    persistTheme(ctx.cwd, next.name);
+    ctx.ui.notify(themeMessage(next.flavor, next.style), "info");
   };
 
   const pickWidth = async (ctx: ExtensionContext): Promise<{ picked: true; width?: number } | undefined> => {
@@ -639,7 +672,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   };
 
   pi.registerCommand("slate", {
-    description: "Density, footer, sidebar width, message length, or file a bug",
+    description: "Density, footer, sidebar width, message length, Catppuccin theme, or file a bug",
     getArgumentCompletions: slateArgumentCompletions,
     handler: async (args, ctx) => {
       const parsed = parseSlateArgs(args);
@@ -650,11 +683,12 @@ export default function piSlate(pi: ExtensionAPI): void {
 
       let kind = parsed.kind;
       if (kind === "menu") {
-        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Sidebar width", "Message length", "File a bug"]);
+        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Sidebar width", "Message length", "Theme", "File a bug"]);
         if (setting === "Density") kind = "density";
         else if (setting === "Footer") kind = "footer";
         else if (setting === "Sidebar width") kind = "width-menu";
         else if (setting === "Message length") kind = "message-length-menu";
+        else if (setting === "Theme") kind = "theme-menu";
         else if (setting === "File a bug") kind = "bug-menu";
         else return;
       }
@@ -692,6 +726,27 @@ export default function piSlate(pi: ExtensionAPI): void {
 
       if (kind === "bug" || kind === "bug-menu") {
         await handleBug(ctx, parsed.kind === "bug" ? parsed.action : undefined);
+        return;
+      }
+
+      if (kind === "theme-menu") {
+        const style = await pickStyle(ctx);
+        if (!style) return;
+        applyCatppuccin(ctx, currentCatppuccin(ctx).flavor, style);
+        return;
+      }
+
+      if (parsed.kind === "theme") {
+        const style = parsed.style ?? (parsed.flavor ? currentCatppuccin(ctx).style : await pickStyle(ctx));
+        if (!style) return;
+        applyCatppuccin(ctx, parsed.flavor ?? currentCatppuccin(ctx).flavor, style);
+        return;
+      }
+
+      if (kind === "style") {
+        const style = (parsed.kind === "style" ? parsed.value : undefined) ?? await pickStyle(ctx);
+        if (!style) return;
+        applyCatppuccin(ctx, currentCatppuccin(ctx).flavor, style);
         return;
       }
 

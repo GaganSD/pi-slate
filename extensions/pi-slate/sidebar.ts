@@ -43,6 +43,7 @@ import {
   sidebarRowSlots,
   splitSidebarContent,
 } from "./workspace-layout.ts";
+import { COMPOSER_SHELF_LINES, chromePaint, composerFrameLineCount, frameRow, inscribedTitle } from "./composer.ts";
 
 const KITTY_PREFIX = "\x1b_G";
 const CLEAR = "[clear]";
@@ -315,7 +316,8 @@ export class Sidebar implements Component {
     this.syncOverlayWidth();
     const theme = this.theme;
     const height = Math.max(1, this.tui?.terminal.rows ?? 1);
-    const { contentHeight, dockHeight } = sidebarRowSlots(height, SIDEBAR_DOCK_LINES);
+    const dockWant = this.splitActive ? Math.max(COMPOSER_SHELF_LINES, composerFrameLineCount()) : SIDEBAR_DOCK_LINES;
+    const { contentHeight, dockHeight } = sidebarRowSlots(height, dockWant);
     const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedActivityRow ?? ""}`;
     const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${Math.round(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
@@ -364,15 +366,19 @@ export class Sidebar implements Component {
       this.contextData.tokensPerSec,
     );
     const resources = formatContextResources(this.contextData.spend, this.skillsLoaded, this.mcpConnected);
-    if (height === 1) return [theme ? this.body(tokens, width, theme, "muted") : tokens];
+    const paint = this.paint(theme);
+    if (height === 1) return [inscribedTitle("Context", width, paint, "bottom")];
 
-    const lines: string[] = [];
-    if (height >= 4 && theme) lines.push(this.rule(width, theme));
-    else if (height >= 4) lines.push("─".repeat(Math.max(0, width)));
-    lines.push(this.heading("Context", width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
-    while (lines.length < height) lines.push(this.decorateLine("", width, theme));
+    const facts = [
+      theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme),
+      theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme),
+    ];
+    const lines = [inscribedTitle("Context", width, paint, "top")];
+    const inner = height - 1;
+    const factCount = Math.min(facts.length, Math.max(0, inner - lines.length));
+    while (lines.length + factCount < inner) lines.push(this.decorateLine("", width, theme));
+    lines.push(...facts.slice(0, factCount));
+    lines.push(inscribedTitle("", width, paint, "bottom"));
     return lines.slice(0, height);
   }
 
@@ -401,7 +407,7 @@ export class Sidebar implements Component {
       return this.body(text, width, theme, clickable ? "muted" : "dim");
     });
     const extra = Math.max(0, height - (1 + files.length + 1 + impact.length));
-    const lines = [this.heading("Summary", width, theme)];
+    const lines = [inscribedTitle("Summary", width, this.paint(theme), "top")];
     if (extra > 0) lines.push(empty);
     this.lastSlots = { ...this.lastSlots, filesStart: lines.length };
     lines.push(...files);
@@ -422,17 +428,20 @@ export class Sidebar implements Component {
     if (maxHeight < 1) return [];
     const view = this.effectiveView();
     const lines = [this.peekHeading(width, theme, view)];
-    const bodyHeight = maxHeight - 1;
-    if (bodyHeight < 1) return lines;
-    if (!view) {
-      lines.push(this.body("none", width, theme, "dim"));
-      return this.padBlock(lines, maxHeight, width, theme);
+    const close = maxHeight >= 2 ? 1 : 0;
+    const bodyHeight = maxHeight - 1 - close;
+    if (bodyHeight >= 1) {
+      if (!view) lines.push(this.body("none", width, theme, "dim"));
+      else {
+        const peek = view.render(Math.max(0, width - 2), bodyHeight);
+        for (let row = 0; row < bodyHeight; row++) {
+          lines.push(this.decorateLine(peek[row] ?? "", width, theme));
+        }
+      }
     }
-    const peek = view.render(Math.max(0, width - 2), bodyHeight);
-    for (let row = 0; row < bodyHeight; row++) {
-      lines.push(this.decorateLine(peek[row] ?? "", width, theme));
-    }
-    return lines;
+    while (lines.length < maxHeight - close) lines.push(this.decorateLine("", width, theme));
+    if (close) lines.push(inscribedTitle("", width, this.paint(theme), "bottom"));
+    return lines.slice(0, maxHeight);
   }
 
   private filesLines(width: number, maxHeight: number, theme: Theme | undefined): string[] {
@@ -488,7 +497,7 @@ export class Sidebar implements Component {
 
   private pushRule(lines: string[], height: number, width: number, theme: Theme | undefined): void {
     if (height < 1) return;
-    lines.push(theme ? this.rule(width, theme) : "─".repeat(Math.max(0, width)));
+    lines.push(theme ? this.rule(width, theme) : frameRow("─".repeat(Math.max(0, width - 2)), width, (text) => text));
   }
 
   private padBlock(block: string[], height: number, width: number, theme: Theme | undefined): string[] {
@@ -503,16 +512,16 @@ export class Sidebar implements Component {
       this.lastPeekHits = undefined;
       return this.heading(title, width, theme);
     }
-    const inner = Math.max(0, width - PEEK_PAD);
+    const inner = Math.max(0, width - 2);
     const copyLabel = peekCopyLabel(view, inner);
     const actions = copyLabel ? `${copyLabel} ${CLEAR}` : CLEAR;
     const leftMax = Math.max(0, inner - actions.length - 1);
     const left = truncateToWidth(title, leftMax, "…");
-    const pad = Math.max(1, inner - visibleWidth(left) - actions.length);
+    const pad = Math.max(0, inner - 1 - visibleWidth(left) - actions.length);
     const y = this.lastSlots.summaryHeight + this.lastSlots.dividerHeight;
-    const clearX0 = Math.max(PEEK_PAD, PEEK_PAD + inner - CLEAR.length);
+    const clearX0 = Math.max(PEEK_PAD, width - 1 - CLEAR.length);
     const hits: Array<{ id: "clear" | "copy"; y: number; x0: number; x1: number }> = [
-      { id: "clear", y, x0: clearX0, x1: Math.max(clearX0, PEEK_PAD + inner) },
+      { id: "clear", y, x0: clearX0, x1: Math.max(clearX0, width - 1) },
     ];
     if (copyLabel) {
       const copyX1 = clearX0 - 1;
@@ -522,15 +531,15 @@ export class Sidebar implements Component {
       }
     }
     this.lastPeekHits = hits;
-    const border = theme ? theme.fg("borderMuted", "│") : "│";
     const action = theme ? theme.fg("dim", actions) : actions;
-    const label = theme ? theme.bold(theme.fg("text", left)) : left;
-    return `${border} ${label}${" ".repeat(pad)}${action}`;
+    const label = theme ? theme.fg("muted", left) : left;
+    const row = frameRow(` ${left}${" ".repeat(pad)}${actions}`, width, this.paint(theme));
+    return row.replace(` ${left}`, ` ${label}`).replace(actions, action);
   }
 
   private heading(label: string, width: number, theme: Theme | undefined): string {
     if (!theme) return this.decorateLine(label, width, theme);
-    return this.decorateLine(theme.bold(theme.fg("text", label)), width, theme);
+    return this.decorateLine(theme.fg("muted", label), width, theme);
   }
 
   private body(text: string, width: number, theme: Theme | undefined, color: "muted" | "dim"): string {
@@ -538,8 +547,12 @@ export class Sidebar implements Component {
     return this.decorateLine(theme.fg(color, text), width, theme);
   }
 
+  private paint(theme: Theme | undefined): (text: string) => string {
+    return theme ? chromePaint(theme) : (text) => text;
+  }
+
   private rule(width: number, theme: Theme): string {
-    return `${theme.fg("borderMuted", "│")}${theme.fg("borderMuted", "─".repeat(Math.max(0, width - 1)))}`;
+    return inscribedTitle("", width, this.paint(theme), "mid");
   }
 
   private handleResizeMouse(event: TuiMouseEvent, onHandle: boolean): TuiMouseEventResult | undefined {
@@ -643,11 +656,11 @@ export class Sidebar implements Component {
 
   private decorateLine(line: string, width: number, theme: Theme | undefined): string {
     if (line.includes(KITTY_PREFIX) || line.includes("\x1b]1337;File=")) {
-      return theme ? `${theme.fg("borderMuted", "│")} ${line}` : `│ ${line}`;
+      return `${this.paint(theme)("│")} ${line}`;
     }
-    if (!theme) return truncateToWidth(line, width);
-    if (line.length === 0) return theme.fg("borderMuted", "│");
-    return `${theme.fg("borderMuted", "│")}${truncateToWidth(` ${line}`, Math.max(0, width - 1))}`;
+    const inner = Math.max(0, width - 2);
+    const body = line.length === 0 ? "" : truncateToWidth(` ${line}`, inner);
+    return frameRow(body, width, this.paint(theme));
   }
 }
 

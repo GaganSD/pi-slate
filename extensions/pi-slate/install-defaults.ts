@@ -22,3 +22,17 @@ export function persistFullscreen(
     return false;
   }
 }
+
+export function persistTheme(
+  cwd: string,
+  theme: string,
+  create: (cwd: string) => Pick<SettingsManager, "getTheme" | "setTheme"> = SettingsManager.create,
+): boolean {
+  try {
+    const settings = create(cwd);
+    if (settings.getTheme() !== theme) settings.setTheme(theme);
+    return true;
+  } catch {
+    return false;
+  }
+}

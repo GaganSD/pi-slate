@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { noteComposerFrameLines } from "../extensions/pi-slate/composer.ts";
 import { DOUBLE_CLICK_MS, Sidebar } from "../extensions/pi-slate/sidebar.ts";
 import { DiffWorkspaceView, type WorkspaceView } from "../extensions/pi-slate/workspace.ts";
 import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
@@ -18,7 +19,15 @@ function view(id: string): WorkspaceView {
 }
 
 function strip(line: string): string {
-  return line.replace(/\[(?!clear\]|copy(?: path)?\])\w+\]/g, "").replace(/^│\s?/, "");
+  return line
+    .replace(/\[(?!clear\]|copy(?: path)?\])\w+\]/g, "")
+    .replace(/^[╭╰├│]\s?/, "")
+    .replace(/\s?[╮╯┤│]$/, "")
+    .replace(/^─\s?/, "")
+    .replace(/\s─+$/, "")
+    .replace(/\s+$/, "");
+  if (/^─+$/.test(s)) return "─";
+  return s.replace(/─+$/, "");
 }
 
 function actionX(line: string, label: string): number {
@@ -297,12 +306,30 @@ test("context dock keeps the heading, rule, and spend", () => {
   sidebar.setContext({ tokens: 18958, percent: 2.4, tokensPerSec: 42.4, spend: 1.234 });
   sidebar.setSkillsLoaded(12);
   sidebar.setMcpConnected(0);
-  const dock = sidebar.render(80).slice(-4).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, "").replace(/^─+$/, "─"));
+  const dock = sidebar.render(80).slice(-4).map((line) => strip(line).replace(/^─+$/, "─"));
   assert.deepEqual(dock, [
-    "─",
     "Context",
     "18,958 tokens · 2% used · 42 tokens/sec",
     "$1.23 · 12 skills loaded · 0 MCPs enabled",
+    "─",
+  ]);
+});
+
+test("context facts stay on consecutive rows when the composer grows", () => {
+  const sidebar = attachSidebar(24);
+  sidebar.splitActive = true;
+  noteComposerFrameLines(6);
+  sidebar.setContext({ tokens: 18958, percent: 2.4, tokensPerSec: 42.4, spend: 1.234 });
+  sidebar.setSkillsLoaded(12);
+  sidebar.setMcpConnected(0);
+  const dock = sidebar.render(80).slice(-6).map((line) => strip(line).replace(/^─+$/, "─"));
+  assert.deepEqual(dock, [
+    "Context",
+    "",
+    "",
+    "18,958 tokens · 2% used · 42 tokens/sec",
+    "$1.23 · 12 skills loaded · 0 MCPs enabled",
+    "─",
   ]);
 });
 

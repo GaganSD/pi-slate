@@ -8,10 +8,68 @@ import {
 } from "@earendil-works/pi-tui";
 import { footerVisibility, modelLabel } from "./layout.ts";
 
-export const COMPOSER_HINT = "↵ send  · esc";
-
 export function composerPaddingX(density: "comfortable" | "compact"): number {
   return density === "compact" ? 2 : 4;
+}
+
+export function chromePaint(theme: Theme): (text: string) => string {
+  return (text) => theme.fg("thinkingHigh", text);
+}
+
+export const COMPOSER_SHELF_LINES = 4;
+
+let lastComposerFrameLines = COMPOSER_SHELF_LINES;
+
+export function composerFrameLineCount(): number {
+  return lastComposerFrameLines;
+}
+
+export function noteComposerFrameLines(count: number): void {
+  lastComposerFrameLines = Math.max(COMPOSER_SHELF_LINES, Math.floor(count));
+}
+
+export function padComposerFrame(
+  lines: string[],
+  width: number,
+  paint: (text: string) => string,
+  min = COMPOSER_SHELF_LINES,
+): string[] {
+  if (lines.length >= min || lines.length < 2) return lines;
+  const out = lines.slice();
+  let bottom = out.length - 1;
+  for (let i = out.length - 1; i >= 1; i--) {
+    if (stripVTControlCharacters(out[i] ?? "").includes("╰")) {
+      bottom = i;
+      break;
+    }
+  }
+  while (out.length < min) {
+    out.splice(bottom, 0, frameRow("", width, paint));
+    bottom += 1;
+  }
+  return out;
+}
+
+export function frameRow(body: string, width: number, paint: (text: string) => string): string {
+  if (width <= 0) return "";
+  if (width === 1) return paint("│");
+  const inner = Math.max(0, width - 2);
+  const text = visibleWidth(body) > inner ? truncateToWidth(body, inner, "") : body;
+  const gap = Math.max(0, inner - visibleWidth(text));
+  return `${paint("│")}${text}${" ".repeat(gap)}${paint("│")}`;
+}
+
+export function inscribedTitle(
+  title: string,
+  width: number,
+  paint: (text: string) => string,
+  kind: "top" | "mid" | "bottom",
+  right = "",
+): string {
+  const ends = { top: ["╭", "╮"], mid: ["├", "┤"], bottom: ["╰", "╯"] }[kind];
+  const left = title ? `─ ${title} ` : "";
+  const tail = right ? ` ${right} ` : "";
+  return inscribedBorder(left, tail, width, paint, ends[0]!, ends[1]!);
 }
 
 export function inscribedBorder(
@@ -76,30 +134,23 @@ export function frameComposerLines(
     width: number;
     empty: boolean;
     paddingX: number;
-    hint: string;
     paint: (text: string) => string;
   },
 ): string[] {
   if (lines.length < 2) return lines;
   let bottom = -1;
   for (let i = lines.length - 1; i >= 1; i--) {
-    if (stripVTControlCharacters(lines[i] ?? "").startsWith("╰")) {
+    if (stripVTControlCharacters(lines[i] ?? "").includes("╰")) {
       bottom = i;
       break;
     }
   }
-  if (bottom < 1) return lines;
+  if (bottom < 1) bottom = lines.length - 1;
 
   const out = lines.slice();
   const prompt = opts.empty && opts.paddingX >= 4;
   for (let i = 1; i < bottom; i++) {
     out[i] = sideBorder(out[i] ?? "", opts.width, opts.paint, prompt && i === 1);
-  }
-  if (opts.empty && bottom === 2) {
-    const inner = Math.max(0, opts.width - 2);
-    const hint = truncateToWidth(opts.hint, inner, "");
-    const pad = Math.max(0, inner - visibleWidth(hint));
-    out.splice(bottom, 0, `${opts.paint("│")}${" ".repeat(pad)}${hint}${opts.paint("│")}`);
   }
   return out;
 }
@@ -110,7 +161,9 @@ function sideBorder(line: string, width: number, paint: (text: string) => string
   let body = line.startsWith(prefix) ? line.slice(leftCols) : line;
   if (body.endsWith(" ")) body = body.slice(0, -1);
   const left = prompt ? `${paint("│")} › ` : paint("│");
-  const gap = Math.max(0, width - leftCols - 1 - visibleWidth(body));
+  const inner = Math.max(0, width - leftCols - 1);
+  if (visibleWidth(body) > inner) body = truncateToWidth(body, inner, "");
+  const gap = Math.max(0, inner - visibleWidth(body));
   return `${left}${body}${" ".repeat(gap)}${paint("│")}`;
 }
 
@@ -135,6 +188,14 @@ export class ComposerEditor extends CustomEditor {
   ) {
     super(tui, theme, keybindings, options);
     this.source = source;
+    // Pi assigns thinking-level colors onto editor.borderColor. Ignore those writes.
+    const paint = (text: string) => chromePaint(this.source().theme)(text);
+    Object.defineProperty(this, "borderColor", {
+      configurable: true,
+      enumerable: true,
+      get: () => paint,
+      set: () => undefined,
+    });
   }
 
   protected renderTopBorder(width: number, hiddenLineCount: number): string {
@@ -160,13 +221,18 @@ export class ComposerEditor extends CustomEditor {
   }
 
   render(width: number): string[] {
-    const hint = this.source().theme.fg("dim", COMPOSER_HINT);
-    return frameComposerLines(super.render(width), {
+    const paint = (text: string) => this.borderColor(text);
+    const lines = padComposerFrame(
+      frameComposerLines(super.render(width), {
+        width,
+        empty: this.getText().length === 0,
+        paddingX: this.getPaddingX(),
+        paint,
+      }),
       width,
-      empty: this.getText().length === 0,
-      paddingX: this.getPaddingX(),
-      hint,
-      paint: (text) => this.borderColor(text),
-    });
+      paint,
+    );
+    noteComposerFrameLines(lines.length);
+    return lines;
   }
 }

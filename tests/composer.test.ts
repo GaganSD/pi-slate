@@ -3,11 +3,14 @@ import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
-  COMPOSER_HINT,
+  chromePaint,
   composerLabels,
   composerPaddingX,
   frameComposerLines,
+  padComposerFrame,
+  frameRow,
   inscribedBorder,
+  inscribedTitle,
 } from "../extensions/pi-slate/composer.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
@@ -18,6 +21,18 @@ const theme = {
 test("composer padding follows density", () => {
   assert.equal(composerPaddingX("comfortable"), 4);
   assert.equal(composerPaddingX("compact"), 2);
+});
+
+test("chrome paint stays on the high thinking border", () => {
+  const colors: string[] = [];
+  const painted = chromePaint({
+    fg: (name: string, text: string) => {
+      colors.push(name);
+      return text;
+    },
+  } as Theme)("─");
+  assert.equal(painted, "─");
+  assert.deepEqual(colors, ["thinkingHigh"]);
 });
 
 test("inscribed border keeps rounded corners and truncates the right label first", () => {
@@ -59,17 +74,17 @@ test("composer labels hide model on minimal footer and at narrow widths", () => 
   assert.equal(narrow.right, "");
 });
 
-test("empty composer frames sides, prompt, and send hint", () => {
+test("empty composer frames sides and prompt without a hint row", () => {
   const width = 40;
   const lines = frameComposerLines(
     ["╭" + "─".repeat(width - 2) + "╮", " ".repeat(width), "╰" + "─".repeat(width - 2) + "╯"],
-    { width, empty: true, paddingX: 4, hint: COMPOSER_HINT, paint: (text) => text },
+    { width, empty: true, paddingX: 4, paint: (text) => text },
   );
-  assert.equal(lines.length, 4);
+  assert.equal(lines.length, 3);
   assert.equal(stripVTControlCharacters(lines[1] ?? "").startsWith("│ ›"), true);
   assert.equal(stripVTControlCharacters(lines[1] ?? "").endsWith("│"), true);
-  assert.match(stripVTControlCharacters(lines[2] ?? ""), /↵ send {2}· esc/);
-  assert.equal(visibleWidth(lines[2] ?? ""), width);
+  assert.equal(visibleWidth(lines[1] ?? ""), width);
+  assert.doesNotMatch(lines.join("\n"), /send|esc/);
 });
 
 test("composer keeps a one-cell reverse cursor", () => {
@@ -77,7 +92,7 @@ test("composer keeps a one-cell reverse cursor", () => {
   const cursorLine = `    \x1b[7m \x1b[0m${" ".repeat(width - 5)}`;
   const lines = frameComposerLines(
     ["╭" + "─".repeat(width - 2) + "╮", cursorLine, "╰" + "─".repeat(width - 2) + "╯"],
-    { width, empty: false, paddingX: 4, hint: COMPOSER_HINT, paint: (text) => text },
+    { width, empty: false, paddingX: 4, paint: (text) => text },
   );
   const body = lines[1] ?? "";
   assert.match(body, /\x1b\[7m \x1b\[0m/);
@@ -85,17 +100,59 @@ test("composer keeps a one-cell reverse cursor", () => {
   assert.equal(visibleWidth(body), width);
 });
 
+test("composer pins a right rail even when the source line is full width", () => {
+  const width = 20;
+  const lines = frameComposerLines(
+    ["╭" + "─".repeat(width - 2) + "╮", "x".repeat(width), "╰" + "─".repeat(width - 2) + "╯"],
+    { width, empty: false, paddingX: 4, paint: (text) => text },
+  );
+  const body = stripVTControlCharacters(lines[1] ?? "");
+  assert.equal(body.startsWith("│"), true);
+  assert.equal(body.endsWith("│"), true);
+  assert.equal(visibleWidth(lines[1] ?? ""), width);
+});
+
 test("typed composer drops the prompt and hint", () => {
   const width = 20;
   const lines = frameComposerLines(
     ["╭" + "─".repeat(width - 2) + "╮", "    hello           ", "╰" + "─".repeat(width - 2) + "╯"],
-    { width, empty: false, paddingX: 4, hint: COMPOSER_HINT, paint: (text) => text },
+    { width, empty: false, paddingX: 4, paint: (text) => text },
   );
   assert.equal(lines.length, 3);
   const body = stripVTControlCharacters(lines[1] ?? "");
   assert.equal(body.startsWith("│"), true);
   assert.doesNotMatch(body, /›/);
   assert.doesNotMatch(lines.join("\n"), /send/);
+});
+
+test("composer shelf pads to four rows without moving the footer", () => {
+  const width = 20;
+  const lines = padComposerFrame(
+    ["╭" + "─".repeat(width - 2) + "╮", "│ ›               │", "╰" + "─".repeat(width - 2) + "╯"],
+    width,
+    (text) => text,
+  );
+  assert.equal(lines.length, 4);
+  assert.equal(lines[0]?.startsWith("╭"), true);
+  assert.equal(stripVTControlCharacters(lines[1] ?? "").startsWith("│"), true);
+  assert.equal(stripVTControlCharacters(lines[2] ?? ""), "│" + " ".repeat(width - 2) + "│");
+  assert.equal(lines[3]?.startsWith("╰"), true);
+});
+
+test("frameRow closes both sides and keeps a reverse-video cell intact", () => {
+  const width = 20;
+  const row = frameRow(` hi \x1b[7m \x1b[0m`, width, (text) => text);
+  assert.equal(row.startsWith("│"), true);
+  assert.equal(row.endsWith("│"), true);
+  assert.match(row, /\x1b\[7m \x1b\[0m/);
+  assert.equal(visibleWidth(row), width);
+});
+
+test("inscribed titles use composer corners", () => {
+  assert.equal(visibleWidth(inscribedTitle("Summary", 16, (text) => text, "top")), 16);
+  assert.match(inscribedTitle("Summary", 16, (text) => text, "top"), /^╭─ Summary /);
+  assert.ok(inscribedTitle("Preview", 16, (text) => text, "mid").startsWith("├"));
+  assert.ok(inscribedTitle("Context", 20, (text) => text, "bottom", "0%").endsWith("╯"));
 });
 
 
