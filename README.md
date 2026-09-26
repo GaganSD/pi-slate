@@ -65,8 +65,8 @@ Slate keeps usage and spend visible at the bottom. Context usage may be estimate
 | --- | --- | --- |
 | Sidebar width | `/slate width [default\|narrow\|medium\|wide\|<percent>]` | How wide the sidebar is. `default` is 20%. |
 | Message length | `/slate message-length [default\|all\|<count>]` | How many chat messages stay on screen. `default` is 100. |
-| Density | `/slate density [comfortable\|compact]` | Comfortable pads the editor; compact does not. |
-| Footer | `/slate footer [standard\|minimal]` | Standard shows model and thinking when there is room; minimal hides them. |
+| Density | `/slate density [comfortable\|compact]` | Comfortable shows a › prompt in the composer; compact is tighter. |
+| Footer | `/slate footer [standard\|minimal]` | Standard shows model and thinking on the composer; minimal hides them. |
 | Bugs | `/slate bug [file\|open]` | Copy a bug report, or open the npm package page. |
 
 ## Minimal By Design

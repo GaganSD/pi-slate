@@ -1,0 +1,171 @@
+import { stripVTControlCharacters } from "node:util";
+import { CustomEditor, type KeybindingsManager, type Theme } from "@earendil-works/pi-coding-agent";
+import {
+  sliceByColumn,
+  truncateToWidth,
+  visibleWidth,
+  type EditorTheme,
+  type TUI,
+} from "@earendil-works/pi-tui";
+import { footerVisibility, modelLabel } from "./layout.ts";
+
+export const COMPOSER_HINT = "↵ send  · esc";
+
+export function composerPaddingX(density: "comfortable" | "compact"): number {
+  return density === "compact" ? 2 : 4;
+}
+
+export function inscribedBorder(
+  left: string,
+  right: string,
+  width: number,
+  paint: (text: string) => string,
+  open: string,
+  close: string,
+): string {
+  if (width <= 0) return "";
+  if (width === 1) return paint(open);
+  if (width === 2) return paint(open + close);
+
+  let leftText = left;
+  let rightText = right;
+  const corners = 2;
+  const minFill = 1;
+  while (
+    corners + visibleWidth(leftText) + visibleWidth(rightText) + minFill > width &&
+    visibleWidth(rightText) > 0
+  ) {
+    rightText = truncateToWidth(rightText, Math.max(0, visibleWidth(rightText) - 1), "");
+  }
+  while (
+    corners + visibleWidth(leftText) + visibleWidth(rightText) + minFill > width &&
+    visibleWidth(leftText) > 0
+  ) {
+    leftText = truncateToWidth(leftText, Math.max(0, visibleWidth(leftText) - 1), "");
+  }
+  const fill = Math.max(minFill, width - corners - visibleWidth(leftText) - visibleWidth(rightText));
+  return `${paint(open)}${leftText}${paint("─".repeat(fill))}${rightText}${paint(close)}`;
+}
+
+export function composerLabels(
+  input: {
+    project: string;
+    branch: string | null;
+    model: string;
+    thinking?: string;
+    footer: "standard" | "minimal";
+  },
+  theme: Theme,
+  width: number,
+): { left: string; right: string } {
+  const visible = footerVisibility(width);
+  const project = theme.fg("accent", input.project);
+  const branch = visible.showBranch && input.branch ? theme.fg("muted", ` / ${input.branch}`) : "";
+  const left = ` ${project}${branch} `;
+  if (input.footer === "minimal") return { left, right: "" };
+
+  const parts: string[] = [];
+  if (visible.showModel) parts.push(theme.fg("muted", input.model));
+  if (visible.showThinking && input.thinking) parts.push(theme.fg("dim", input.thinking));
+  const right = parts.length ? ` ${parts.join(theme.fg("borderMuted", " · "))} ` : "";
+  return { left, right };
+}
+
+export function frameComposerLines(
+  lines: string[],
+  opts: {
+    width: number;
+    empty: boolean;
+    paddingX: number;
+    hint: string;
+    paint: (text: string) => string;
+  },
+): string[] {
+  if (lines.length < 2) return lines;
+  let bottom = -1;
+  for (let i = lines.length - 1; i >= 1; i--) {
+    if (stripVTControlCharacters(lines[i] ?? "").startsWith("╰")) {
+      bottom = i;
+      break;
+    }
+  }
+  if (bottom < 1) return lines;
+
+  const out = lines.slice();
+  const prompt = opts.empty && opts.paddingX >= 4;
+  for (let i = 1; i < bottom; i++) {
+    out[i] = sideBorder(out[i] ?? "", opts.width, opts.paint, prompt && i === 1);
+  }
+  if (opts.empty && bottom === 2) {
+    const inner = Math.max(0, opts.width - 2);
+    const hint = truncateToWidth(opts.hint, inner, "");
+    const pad = Math.max(0, inner - visibleWidth(hint));
+    out.splice(bottom, 0, `${opts.paint("│")}${" ".repeat(pad)}${hint}${opts.paint("│")}`);
+  }
+  return out;
+}
+
+function sideBorder(line: string, width: number, paint: (text: string) => string, prompt: boolean): string {
+  const pad = visibleWidth(line) < width ? `${line}${" ".repeat(width - visibleWidth(line))}` : line;
+  const left = prompt ? `${paint("│")} › ` : paint("│");
+  const leftCols = prompt ? 4 : 1;
+  const mid = sliceByColumn(pad, leftCols, Math.max(0, width - leftCols - 1));
+  return `${left}${mid}${paint("│")}`;
+}
+
+export type ComposerSource = {
+  project: string;
+  branch: string | null;
+  model: { id?: string; name?: string } | undefined;
+  thinking?: string;
+  footer: "standard" | "minimal";
+  theme: Theme;
+};
+
+export class ComposerEditor extends CustomEditor {
+  private readonly source: () => ComposerSource;
+
+  constructor(
+    tui: TUI,
+    theme: EditorTheme,
+    keybindings: KeybindingsManager,
+    source: () => ComposerSource,
+    options?: ConstructorParameters<typeof CustomEditor>[3],
+  ) {
+    super(tui, theme, keybindings, options);
+    this.source = source;
+  }
+
+  protected renderTopBorder(width: number, hiddenLineCount: number): string {
+    if (width <= 2) return super.renderTopBorder(width, hiddenLineCount);
+    return this.borderColor("╭") + super.renderTopBorder(width - 2, hiddenLineCount) + this.borderColor("╮");
+  }
+
+  protected renderBottomBorder(width: number, hiddenLineCount: number): string {
+    const src = this.source();
+    const more = hiddenLineCount > 0 ? this.borderColor(` ↓ ${hiddenLineCount} more `) : "";
+    const { left, right } = composerLabels(
+      {
+        project: src.project,
+        branch: src.branch,
+        model: modelLabel(src.model),
+        thinking: src.thinking,
+        footer: src.footer,
+      },
+      src.theme,
+      width,
+    );
+    return inscribedBorder(`${more}${left}`, right, width, (text) => this.borderColor(text), "╰", "╯");
+  }
+
+  render(width: number): string[] {
+    const hint = this.source().theme.fg("dim", COMPOSER_HINT);
+    return frameComposerLines(super.render(width), {
+      width,
+      empty: this.getText().length === 0,
+      paddingX: this.getPaddingX(),
+      hint,
+      paint: (text) => this.borderColor(text),
+    });
+  }
+}

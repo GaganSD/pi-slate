@@ -18,6 +18,7 @@ import {
   type EditorTheme,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { ComposerEditor, composerPaddingX } from "./composer.ts";
 import { installImagePlaceholders } from "./image-placeholders.ts";
 import { GitStatusPoller } from "./git-status.ts";
 import { fileKey, formatFileLabel } from "./files-modified.ts";
@@ -35,7 +36,6 @@ import {
   centerOffset,
   compactPath,
   countSkillCommands,
-  footerVisibility,
   mainColumnWidth,
   modelLabel,
   parseMcpEnabledCount,
@@ -169,60 +169,23 @@ class MinimalHeader implements Component {
   }
 }
 
-class MinimalFooter implements Component {
+class BranchFooter implements Component {
   private readonly unsubscribe: () => void;
 
   constructor(
-    private readonly tui: TUI,
-    private readonly theme: Theme,
-    private readonly footerData: {
-      getGitBranch(): string | null;
-      onBranchChange(callback: () => void): () => void;
-    },
-    private readonly getContext: () => ExtensionContext,
-    private readonly getConfig: () => SlateConfig,
-    private readonly columnWidth: (width: number) => number,
+    footerData: { getGitBranch(): string | null; onBranchChange(callback: () => void): () => void },
+    private readonly onBranch: (branch: string | null) => void,
   ) {
-    this.unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+    this.onBranch(footerData.getGitBranch());
+    this.unsubscribe = footerData.onBranchChange(() => this.onBranch(footerData.getGitBranch()));
   }
 
   invalidate(): void {}
-
+  render(): string[] {
+    return [];
+  }
   dispose(): void {
     this.unsubscribe();
-  }
-
-  render(width: number): string[] {
-    if (width < 12) return [];
-    const ctx = this.getContext();
-    const config = this.getConfig();
-    const column = this.columnWidth(width);
-    const visible = footerVisibility(column);
-    const project = basename(ctx.cwd) || ctx.cwd;
-    const branch = this.footerData.getGitBranch();
-
-    const leftParts = [this.theme.fg("accent", project)];
-    if (visible.showBranch && branch) {
-      leftParts.push(this.theme.fg("muted", `on ${branch}`));
-    }
-    const left = leftParts.join(" ");
-
-    const rightParts: string[] = [];
-    if (config.footer === "standard" && visible.showModel) {
-      rightParts.push(this.theme.fg("muted", modelLabel(ctx.model)));
-    }
-    if (config.footer === "standard" && visible.showThinking && ctx.thinkingLevel) {
-      rightParts.push(this.theme.fg("dim", ctx.thinkingLevel));
-    }
-    const right = rightParts.join(this.theme.fg("borderMuted", " · "));
-
-    const rightPad = 1;
-    const available = Math.max(1, column - visibleWidth(right) - 1 - rightPad);
-    const clippedLeft = truncateToWidth(left, available, "…");
-    const gap = " ".repeat(
-      Math.max(1, column - visibleWidth(clippedLeft) - visibleWidth(right) - rightPad),
-    );
-    return [`${clippedLeft}${gap}${right}${" ".repeat(rightPad)}`];
   }
 }
 
@@ -243,6 +206,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   let config = loadConfig();
   let currentContext: ExtensionContext | undefined;
   let activeEditor: CustomEditor | undefined;
+  let gitBranch: string | null = null;
   let activeTui: TUI | undefined;
   let messageWindow: MessageWindow | undefined;
   const tokenRate = new TokenRateTracker();
@@ -378,21 +342,40 @@ export default function piSlate(pi: ExtensionAPI): void {
       queueMicrotask(syncVisibleMessages);
       return new MinimalHeader(theme, getContext, columnWidth);
     });
-    ctx.ui.setFooter((tui, theme, footerData) => {
+    ctx.ui.setFooter((tui, _theme, footerData) => {
       activeTui = tui;
       requestRender = (force = false) => tui.requestRender(force);
-      return new MinimalFooter(tui, theme, footerData, getContext, () => config, columnWidth);
+      return new BranchFooter(footerData, (branch) => {
+        gitBranch = branch;
+        tui.requestRender();
+      });
     });
     ctx.ui.setEditorComponent((tui: TUI, editorTheme: EditorTheme, keybindings: KeybindingsManager) => {
       const minimalEditorTheme: EditorTheme = {
         ...editorTheme,
         borderColor: (text) => ctx.ui.theme.fg("borderMuted", text),
       };
-      activeEditor = new CustomEditor(tui, minimalEditorTheme, keybindings, {
-        paddingX: config.density === "compact" ? 0 : 1,
-        autocompleteMaxVisible: 8,
-        embedWorkingStatus: true,
-      });
+      activeEditor = new ComposerEditor(
+        tui,
+        minimalEditorTheme,
+        keybindings,
+        () => {
+          const current = getContext();
+          return {
+            project: basename(current.cwd) || current.cwd,
+            branch: gitBranch,
+            model: current.model,
+            thinking: current.thinkingLevel,
+            footer: config.footer,
+            theme: current.ui.theme,
+          };
+        },
+        {
+          paddingX: composerPaddingX(config.density),
+          autocompleteMaxVisible: 8,
+          embedWorkingStatus: true,
+        },
+      );
       images.attachEditor(activeEditor);
       return activeEditor;
     });
@@ -493,6 +476,7 @@ export default function piSlate(pi: ExtensionAPI): void {
     ctx.ui.setWorkingIndicator();
     ctx.ui.setWorkingMessage();
     activeEditor = undefined;
+    gitBranch = null;
     requestRender = () => {};
   });
 
@@ -501,7 +485,7 @@ export default function piSlate(pi: ExtensionAPI): void {
       saveConfig(next);
       config = next;
       sidebar.setPreferredWidth(config.sidebarPercent);
-      activeEditor?.setPaddingX(config.density === "compact" ? 0 : 1);
+      activeEditor?.setPaddingX(composerPaddingX(config.density));
       syncVisibleMessages();
       requestRender();
       ctx.ui.notify(message, "info");
