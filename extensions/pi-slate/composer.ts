@@ -8,8 +8,6 @@ import {
 } from "@earendil-works/pi-tui";
 import { footerVisibility, modelLabel } from "./layout.ts";
 
-export const COMPOSER_HINT = "↵ send  · esc";
-
 export function composerPaddingX(density: "comfortable" | "compact"): number {
   return density === "compact" ? 2 : 4;
 }
@@ -98,7 +96,6 @@ export function frameComposerLines(
     width: number;
     empty: boolean;
     paddingX: number;
-    hint: string;
     paint: (text: string) => string;
   },
 ): string[] {
@@ -116,12 +113,6 @@ export function frameComposerLines(
   const prompt = opts.empty && opts.paddingX >= 4;
   for (let i = 1; i < bottom; i++) {
     out[i] = sideBorder(out[i] ?? "", opts.width, opts.paint, prompt && i === 1);
-  }
-  if (opts.empty && bottom === 2) {
-    const inner = Math.max(0, opts.width - 2);
-    const hint = truncateToWidth(opts.hint, inner, "");
-    const pad = Math.max(0, inner - visibleWidth(hint));
-    out.splice(bottom, 0, `${opts.paint("│")}${" ".repeat(pad)}${hint}${opts.paint("│")}`);
   }
   return out;
 }
@@ -182,12 +173,10 @@ export class ComposerEditor extends CustomEditor {
   }
 
   render(width: number): string[] {
-    const hint = this.source().theme.fg("dim", COMPOSER_HINT);
     return frameComposerLines(super.render(width), {
       width,
       empty: this.getText().length === 0,
       paddingX: this.getPaddingX(),
-      hint,
       paint: (text) => this.borderColor(text),
     });
   }

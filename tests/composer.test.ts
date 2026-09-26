@@ -3,7 +3,6 @@ import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
-  COMPOSER_HINT,
   composerLabels,
   composerPaddingX,
   frameComposerLines,
@@ -61,17 +60,17 @@ test("composer labels hide model on minimal footer and at narrow widths", () => 
   assert.equal(narrow.right, "");
 });
 
-test("empty composer frames sides, prompt, and send hint", () => {
+test("empty composer frames sides and prompt without a hint row", () => {
   const width = 40;
   const lines = frameComposerLines(
     ["╭" + "─".repeat(width - 2) + "╮", " ".repeat(width), "╰" + "─".repeat(width - 2) + "╯"],
-    { width, empty: true, paddingX: 4, hint: COMPOSER_HINT, paint: (text) => text },
+    { width, empty: true, paddingX: 4, paint: (text) => text },
   );
-  assert.equal(lines.length, 4);
+  assert.equal(lines.length, 3);
   assert.equal(stripVTControlCharacters(lines[1] ?? "").startsWith("│ ›"), true);
   assert.equal(stripVTControlCharacters(lines[1] ?? "").endsWith("│"), true);
-  assert.match(stripVTControlCharacters(lines[2] ?? ""), /↵ send {2}· esc/);
-  assert.equal(visibleWidth(lines[2] ?? ""), width);
+  assert.equal(visibleWidth(lines[1] ?? ""), width);
+  assert.doesNotMatch(lines.join("\n"), /send|esc/);
 });
 
 test("composer keeps a one-cell reverse cursor", () => {
@@ -79,7 +78,7 @@ test("composer keeps a one-cell reverse cursor", () => {
   const cursorLine = `    \x1b[7m \x1b[0m${" ".repeat(width - 5)}`;
   const lines = frameComposerLines(
     ["╭" + "─".repeat(width - 2) + "╮", cursorLine, "╰" + "─".repeat(width - 2) + "╯"],
-    { width, empty: false, paddingX: 4, hint: COMPOSER_HINT, paint: (text) => text },
+    { width, empty: false, paddingX: 4, paint: (text) => text },
   );
   const body = lines[1] ?? "";
   assert.match(body, /\x1b\[7m \x1b\[0m/);
@@ -91,7 +90,7 @@ test("typed composer drops the prompt and hint", () => {
   const width = 20;
   const lines = frameComposerLines(
     ["╭" + "─".repeat(width - 2) + "╮", "    hello           ", "╰" + "─".repeat(width - 2) + "╯"],
-    { width, empty: false, paddingX: 4, hint: COMPOSER_HINT, paint: (text) => text },
+    { width, empty: false, paddingX: 4, paint: (text) => text },
   );
   assert.equal(lines.length, 3);
   const body = stripVTControlCharacters(lines[1] ?? "");
