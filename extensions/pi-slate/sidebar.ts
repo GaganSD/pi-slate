@@ -525,14 +525,14 @@ export class Sidebar implements Component {
     }
     this.lastPeekHits = hits;
     const action = theme ? theme.fg("dim", actions) : actions;
-    const label = theme ? theme.bold(theme.fg("text", left)) : left;
+    const label = theme ? theme.fg("muted", left) : left;
     const row = frameRow(` ${left}${" ".repeat(pad)}${actions}`, width, this.paint(theme));
     return row.replace(` ${left}`, ` ${label}`).replace(actions, action);
   }
 
   private heading(label: string, width: number, theme: Theme | undefined): string {
     if (!theme) return this.decorateLine(label, width, theme);
-    return this.decorateLine(theme.bold(theme.fg("text", label)), width, theme);
+    return this.decorateLine(theme.fg("muted", label), width, theme);
   }
 
   private body(text: string, width: number, theme: Theme | undefined, color: "muted" | "dim"): string {
