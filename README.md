@@ -67,6 +67,7 @@ Slate keeps usage and spend visible at the bottom. Context usage may be estimate
 | Message length | `/slate message-length [default\|all\|<count>]` | How many chat messages stay on screen. `default` is 100. |
 | Density | `/slate density [comfortable\|compact]` | Comfortable shows a › prompt in the composer; compact is tighter. |
 | Footer | `/slate footer [standard\|minimal]` | Standard shows model and thinking on the composer; minimal hides them. |
+| Theme | `/slate theme [latte\|frappe\|macchiato\|mocha] [canonical\|quiet\|mauve\|sapphire\|peach\|teal]` | Catppuccin flavor and style. `/slate flavor` and `/slate style` toggle one axis. |
 | Bugs | `/slate bug [file\|open]` | Copy a bug report, or open the npm package page. |
 
 ## Minimal By Design

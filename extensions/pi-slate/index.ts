@@ -66,7 +66,17 @@ import {
   SLATE_ISSUES_URL,
 } from "./bug.ts";
 import { syncMessageWindow, type MessageWindow } from "./message-window.ts";
-import { applySlateTheme, persistFullscreen, shouldApplyInstallDefault } from "./install-defaults.ts";
+import {
+  FLAVOR_LABELS,
+  FLAVORS,
+  STYLE_LABELS,
+  STYLES,
+  resolveCatppuccinTheme,
+  themeMessage,
+  type Flavor,
+  type Style,
+} from "./catppuccin.ts";
+import { applySlateTheme, persistFullscreen, persistTheme, shouldApplyInstallDefault } from "./install-defaults.ts";
 
 type SlateConfig = {
   density: "comfortable" | "compact";
@@ -517,6 +527,41 @@ export default function piSlate(pi: ExtensionAPI): void {
     return undefined;
   };
 
+  const currentCatppuccin = (ctx: ExtensionContext) => resolveCatppuccinTheme(ctx.ui.theme.name);
+
+  const pickFlavor = async (ctx: ExtensionContext): Promise<Flavor | undefined> => {
+    const current = currentCatppuccin(ctx).flavor;
+    const value = await ctx.ui.select(
+      "Flavor",
+      FLAVORS.map((flavor) => withCurrent(FLAVOR_LABELS[flavor], flavor === current)),
+    );
+    if (!value) return undefined;
+    const key = withoutCurrent(value);
+    return FLAVORS.find((flavor) => FLAVOR_LABELS[flavor] === key);
+  };
+
+  const pickStyle = async (ctx: ExtensionContext): Promise<Style | undefined> => {
+    const current = currentCatppuccin(ctx).style;
+    const value = await ctx.ui.select(
+      "Style",
+      STYLES.map((style) => withCurrent(STYLE_LABELS[style], style === current)),
+    );
+    if (!value) return undefined;
+    const key = withoutCurrent(value);
+    return STYLES.find((style) => STYLE_LABELS[style] === key);
+  };
+
+  const applyCatppuccin = (ctx: ExtensionContext, flavor: Flavor, style: Style): void => {
+    const next = resolveCatppuccinTheme(ctx.ui.theme.name, flavor, style);
+    const result = ctx.ui.setTheme(next.name);
+    if (!result.success) {
+      ctx.ui.notify(result.error ?? `Could not load ${next.name}. Run /reload first.`, "error");
+      return;
+    }
+    persistTheme(ctx.cwd, next.name);
+    ctx.ui.notify(themeMessage(next.flavor, next.style), "info");
+  };
+
   const pickWidth = async (ctx: ExtensionContext): Promise<{ picked: true; width?: number } | undefined> => {
     const percent = sidebar.preferredWidth ?? config.sidebarPercent;
     const defaultLabel = "Default (20%)";
@@ -639,7 +684,7 @@ export default function piSlate(pi: ExtensionAPI): void {
   };
 
   pi.registerCommand("slate", {
-    description: "Density, footer, sidebar width, message length, or file a bug",
+    description: "Density, footer, sidebar width, message length, Catppuccin theme, or file a bug",
     getArgumentCompletions: slateArgumentCompletions,
     handler: async (args, ctx) => {
       const parsed = parseSlateArgs(args);
@@ -650,11 +695,12 @@ export default function piSlate(pi: ExtensionAPI): void {
 
       let kind = parsed.kind;
       if (kind === "menu") {
-        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Sidebar width", "Message length", "File a bug"]);
+        const setting = await ctx.ui.select("Slate", ["Density", "Footer", "Sidebar width", "Message length", "Theme", "File a bug"]);
         if (setting === "Density") kind = "density";
         else if (setting === "Footer") kind = "footer";
         else if (setting === "Sidebar width") kind = "width-menu";
         else if (setting === "Message length") kind = "message-length-menu";
+        else if (setting === "Theme") kind = "theme-menu";
         else if (setting === "File a bug") kind = "bug-menu";
         else return;
       }
@@ -692,6 +738,37 @@ export default function piSlate(pi: ExtensionAPI): void {
 
       if (kind === "bug" || kind === "bug-menu") {
         await handleBug(ctx, parsed.kind === "bug" ? parsed.action : undefined);
+        return;
+      }
+
+      if (kind === "theme-menu") {
+        const flavor = await pickFlavor(ctx);
+        if (!flavor) return;
+        const style = await pickStyle(ctx);
+        if (!style) return;
+        applyCatppuccin(ctx, flavor, style);
+        return;
+      }
+
+      if (parsed.kind === "theme") {
+        const flavor = parsed.flavor ?? await pickFlavor(ctx);
+        if (!flavor) return;
+        const style = parsed.style ?? currentCatppuccin(ctx).style;
+        applyCatppuccin(ctx, flavor, style);
+        return;
+      }
+
+      if (kind === "flavor") {
+        const flavor = (parsed.kind === "flavor" ? parsed.value : undefined) ?? await pickFlavor(ctx);
+        if (!flavor) return;
+        applyCatppuccin(ctx, flavor, currentCatppuccin(ctx).style);
+        return;
+      }
+
+      if (kind === "style") {
+        const style = (parsed.kind === "style" ? parsed.value : undefined) ?? await pickStyle(ctx);
+        if (!style) return;
+        applyCatppuccin(ctx, currentCatppuccin(ctx).flavor, style);
         return;
       }
 

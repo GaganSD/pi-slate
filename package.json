@@ -51,7 +51,7 @@
       "./extensions/pi-slate/index.ts"
     ],
     "themes": [
-      "./themes/pi-slate.json"
+      "./themes/*.json"
     ],
     "image": "https://cdn.jsdelivr.net/npm/pi-slate@0.1.4/assets/slate-overview.png"
   }

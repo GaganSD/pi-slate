@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { parseFlavor, parseStyle, type Flavor, type Style } from "./catppuccin.ts";
 
 // The source SVG is a 4×4 square grid. Terminal cells are approximately twice
 // as tall as they are wide, so every source square occupies two columns.
@@ -195,7 +196,7 @@ export const SLATE_VERSION = JSON.parse(
 ).version as string;
 
 export const SLATE_USAGE =
-  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>] | message-length [default|all|<count>] | bug [file|open]";
+  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>] | message-length [default|all|<count>] | theme [latte|frappe|macchiato|mocha] [canonical|quiet|mauve|sapphire|peach|teal] | flavor [latte|frappe|macchiato|mocha] | style [canonical|quiet|mauve|sapphire|peach|teal] | bug [file|open]";
 
 export function withCurrent(label: string, current: boolean): string {
   return current ? `${label} (current)` : label;
@@ -205,6 +206,8 @@ export function withoutCurrent(label: string): string {
   return label.endsWith(" (current)") ? label.slice(0, -" (current)".length) : label;
 }
 
+const THEME_FLAVORS = ["latte", "frappe", "macchiato", "mocha"] as const;
+const THEME_STYLES = ["canonical", "quiet", "mauve", "sapphire", "peach", "teal"] as const;
 const SLATE_COMPLETIONS = [
   "density",
   "density comfortable",
@@ -220,6 +223,15 @@ const SLATE_COMPLETIONS = [
   "message-length",
   "message-length default",
   "message-length all",
+  "theme",
+  ...THEME_FLAVORS.flatMap((flavor) => [
+    `theme ${flavor}`,
+    ...THEME_STYLES.map((style) => `theme ${flavor} ${style}`),
+  ]),
+  "flavor",
+  ...THEME_FLAVORS.map((flavor) => `flavor ${flavor}`),
+  "style",
+  ...THEME_STYLES.map((style) => `style ${style}`),
   "bug",
   "bug file",
   "bug open",
@@ -233,6 +245,10 @@ export type SlateArgs =
   | { ok: true; kind: "width"; width?: number }
   | { ok: true; kind: "message-length-menu" }
   | { ok: true; kind: "message-length"; value?: number | "all" }
+  | { ok: true; kind: "theme-menu" }
+  | { ok: true; kind: "theme"; flavor?: Flavor; style?: Style }
+  | { ok: true; kind: "flavor"; value?: Flavor }
+  | { ok: true; kind: "style"; value?: Style }
   | { ok: true; kind: "bug-menu" }
   | { ok: true; kind: "bug"; action: "file" | "open" }
   | { ok: false };
@@ -240,8 +256,28 @@ export type SlateArgs =
 export function parseSlateArgs(raw: string): SlateArgs {
   const words = raw.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return { ok: true, kind: "menu" };
-  const [head, tail] = words;
+  const [head, tail, extra] = words;
+  if (head === "theme") {
+    if (words.length > 3) return { ok: false };
+    if (!tail) return { ok: true, kind: "theme-menu" };
+    const flavor = parseFlavor(tail);
+    if (!flavor) return { ok: false };
+    if (!extra) return { ok: true, kind: "theme", flavor };
+    const style = parseStyle(extra);
+    if (!style) return { ok: false };
+    return { ok: true, kind: "theme", flavor, style };
+  }
   if (words.length > 2) return { ok: false };
+  if (head === "flavor") {
+    if (!tail) return { ok: true, kind: "flavor" };
+    const flavor = parseFlavor(tail);
+    return flavor ? { ok: true, kind: "flavor", value: flavor } : { ok: false };
+  }
+  if (head === "style") {
+    if (!tail) return { ok: true, kind: "style" };
+    const style = parseStyle(tail);
+    return style ? { ok: true, kind: "style", value: style } : { ok: false };
+  }
   if (head === "density") {
     if (!tail) return { ok: true, kind: "density" };
     if (tail === "comfortable" || tail === "compact") return { ok: true, kind: "density", value: tail };

@@ -176,6 +176,24 @@ test("/slate args route density, footer, and width", () => {
   assert.deepEqual(parseSlateArgs("bug"), { ok: true, kind: "bug-menu" });
   assert.deepEqual(parseSlateArgs("bug file"), { ok: true, kind: "bug", action: "file" });
   assert.deepEqual(parseSlateArgs("bug open"), { ok: true, kind: "bug", action: "open" });
+  assert.deepEqual(parseSlateArgs("theme"), { ok: true, kind: "theme-menu" });
+  assert.deepEqual(parseSlateArgs("theme mocha"), { ok: true, kind: "theme", flavor: "mocha" });
+  assert.deepEqual(parseSlateArgs("theme mocha mauve"), {
+    ok: true,
+    kind: "theme",
+    flavor: "mocha",
+    style: "mauve",
+  });
+  assert.deepEqual(parseSlateArgs("theme frappé quiet"), {
+    ok: true,
+    kind: "theme",
+    flavor: "frappe",
+    style: "quiet",
+  });
+  assert.deepEqual(parseSlateArgs("flavor latte"), { ok: true, kind: "flavor", value: "latte" });
+  assert.deepEqual(parseSlateArgs("style sapphire"), { ok: true, kind: "style", value: "sapphire" });
+  assert.deepEqual(parseSlateArgs("theme nope"), { ok: false });
+  assert.deepEqual(parseSlateArgs("theme mocha mauve extra"), { ok: false });
   assert.deepEqual(parseSlateArgs("bug nope"), { ok: false });
   assert.deepEqual(parseSlateArgs("width nope"), { ok: false });
   assert.deepEqual(parseSlateArgs("nope"), { ok: false });
