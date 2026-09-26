@@ -12,14 +12,38 @@ export function composerPaddingX(density: "comfortable" | "compact"): number {
   return density === "compact" ? 2 : 4;
 }
 
-let lastComposerFrameLines = 3;
+export const COMPOSER_SHELF_LINES = 4;
+
+let lastComposerFrameLines = COMPOSER_SHELF_LINES;
 
 export function composerFrameLineCount(): number {
   return lastComposerFrameLines;
 }
 
 export function noteComposerFrameLines(count: number): void {
-  lastComposerFrameLines = Math.max(3, Math.floor(count));
+  lastComposerFrameLines = Math.max(COMPOSER_SHELF_LINES, Math.floor(count));
+}
+
+export function padComposerFrame(
+  lines: string[],
+  width: number,
+  paint: (text: string) => string,
+  min = COMPOSER_SHELF_LINES,
+): string[] {
+  if (lines.length >= min || lines.length < 2) return lines;
+  const out = lines.slice();
+  let bottom = out.length - 1;
+  for (let i = out.length - 1; i >= 1; i--) {
+    if (stripVTControlCharacters(out[i] ?? "").includes("╰")) {
+      bottom = i;
+      break;
+    }
+  }
+  while (out.length < min) {
+    out.splice(bottom, 0, frameRow("", width, paint));
+    bottom += 1;
+  }
+  return out;
 }
 
 export function frameRow(body: string, width: number, paint: (text: string) => string): string {
@@ -185,12 +209,17 @@ export class ComposerEditor extends CustomEditor {
   }
 
   render(width: number): string[] {
-    const lines = frameComposerLines(super.render(width), {
+    const paint = (text: string) => this.borderColor(text);
+    const lines = padComposerFrame(
+      frameComposerLines(super.render(width), {
+        width,
+        empty: this.getText().length === 0,
+        paddingX: this.getPaddingX(),
+        paint,
+      }),
       width,
-      empty: this.getText().length === 0,
-      paddingX: this.getPaddingX(),
-      paint: (text) => this.borderColor(text),
-    });
+      paint,
+    );
     noteComposerFrameLines(lines.length);
     return lines;
   }

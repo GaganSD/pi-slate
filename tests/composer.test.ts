@@ -6,6 +6,7 @@ import {
   composerLabels,
   composerPaddingX,
   frameComposerLines,
+  padComposerFrame,
   frameRow,
   inscribedBorder,
   inscribedTitle,
@@ -109,6 +110,20 @@ test("typed composer drops the prompt and hint", () => {
   assert.equal(body.startsWith("│"), true);
   assert.doesNotMatch(body, /›/);
   assert.doesNotMatch(lines.join("\n"), /send/);
+});
+
+test("composer shelf pads to four rows without moving the footer", () => {
+  const width = 20;
+  const lines = padComposerFrame(
+    ["╭" + "─".repeat(width - 2) + "╮", "│ ›               │", "╰" + "─".repeat(width - 2) + "╯"],
+    width,
+    (text) => text,
+  );
+  assert.equal(lines.length, 4);
+  assert.equal(lines[0]?.startsWith("╭"), true);
+  assert.equal(stripVTControlCharacters(lines[1] ?? "").startsWith("│"), true);
+  assert.equal(stripVTControlCharacters(lines[2] ?? ""), "│" + " ".repeat(width - 2) + "│");
+  assert.equal(lines[3]?.startsWith("╰"), true);
 });
 
 test("frameRow closes both sides and keeps a reverse-video cell intact", () => {
