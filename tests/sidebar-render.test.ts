@@ -74,7 +74,14 @@ function fixture(
     { component: scroll, basis: 0, grow: 1, minSize: 1 },
     { component: dock, basis: "auto", minSize: 1 },
   ]);
-  const pane = new Text("SIDEBAR\nReserved / MCP", 0, 0);
+  const pane = {
+    invalidate() {},
+    setText(_text: string) {},
+    render(width: number) {
+      const line = `SIDEBAR${" ".repeat(Math.max(0, width - 7))}`;
+      return Array.from({ length: terminal.rows }, () => line);
+    },
+  };
   tui.setLayoutRoot(main);
   const dispose = installSidebarSplit(tui, pane, preferred ? () => preferred.value : undefined);
   assert(dispose, "Fullscreen must mount the real sidebar split");
@@ -109,7 +116,9 @@ function fixture(
       assert(lines.every((line) => !line.includes("SIDEBAR")));
     }
     assert(lines.at(-1)!.startsWith("footer"), "Footer must stay docked");
-    assert(!lines.at(-1)!.includes("SIDEBAR"), "Input dock spans the full width");
+    if (workspaceColumnWidth(terminal.columns, preferred?.value)) {
+      assert(lines.at(-1)!.includes("SIDEBAR"), "Sidebar divider reaches the composer");
+    }
   }
   return { terminal, tui, chat, messages, reformats, widths, scroll, editor, pane, main, reset, assertCached, assertFrame };
 }

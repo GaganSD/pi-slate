@@ -43,7 +43,7 @@ import {
   sidebarRowSlots,
   splitSidebarContent,
 } from "./workspace-layout.ts";
-import { composerFrameLineCount, frameRow, inscribedTitle } from "./composer.ts";
+import { frameRow, inscribedTitle } from "./composer.ts";
 
 const KITTY_PREFIX = "\x1b_G";
 const CLEAR = "[clear]";
@@ -315,8 +315,7 @@ export class Sidebar implements Component {
   render(width: number): string[] {
     this.syncOverlayWidth();
     const theme = this.theme;
-    const rows = Math.max(1, this.tui?.terminal.rows ?? 1);
-    const height = this.splitActive ? Math.max(1, rows - composerFrameLineCount()) : rows;
+    const height = Math.max(1, this.tui?.terminal.rows ?? 1);
     const { contentHeight, dockHeight } = sidebarRowSlots(height, SIDEBAR_DOCK_LINES);
     const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedActivityRow ?? ""}`;
     const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${Math.round(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;

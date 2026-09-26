@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { noteComposerFrameLines } from "../extensions/pi-slate/composer.ts";
 import { DOUBLE_CLICK_MS, Sidebar } from "../extensions/pi-slate/sidebar.ts";
 import { DiffWorkspaceView, type WorkspaceView } from "../extensions/pi-slate/workspace.ts";
 import type { FileChange } from "../extensions/pi-slate/files-modified.ts";
@@ -313,16 +312,6 @@ test("context dock keeps the heading, rule, and spend", () => {
     "$1.23 · 12 skills loaded · 0 MCPs enabled",
     "Context",
   ]);
-});
-
-test("split sidebar keeps Context when the composer takes the bottom rows", () => {
-  const sidebar = attachSidebar(24);
-  sidebar.splitActive = true;
-  noteComposerFrameLines(4);
-  sidebar.setContext({ tokens: 100, percent: 1, tokensPerSec: 0, spend: 0 });
-  const lines = sidebar.render(40).map(strip);
-  assert.equal(lines.length, 20);
-  assert.equal(lines.at(-1), "Context");
 });
 
 test("clicking a last-turn fact opens that list in Preview", () => {
