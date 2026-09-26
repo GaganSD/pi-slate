@@ -18,7 +18,15 @@ function view(id: string): WorkspaceView {
 }
 
 function strip(line: string): string {
-  return line.replace(/\[(?!clear\]|copy(?: path)?\])\w+\]/g, "").replace(/^│\s?/, "");
+  return line
+    .replace(/\[(?!clear\]|copy(?: path)?\])\w+\]/g, "")
+    .replace(/^[╭╰├│]\s?/, "")
+    .replace(/\s?[╮╯┤│]$/, "")
+    .replace(/^─\s?/, "")
+    .replace(/\s─+$/, "")
+    .replace(/\s+$/, "");
+  if (/^─+$/.test(s)) return "─";
+  return s.replace(/─+$/, "");
 }
 
 function actionX(line: string, label: string): number {
@@ -297,7 +305,7 @@ test("context dock keeps the heading, rule, and spend", () => {
   sidebar.setContext({ tokens: 18958, percent: 2.4, tokensPerSec: 42.4, spend: 1.234 });
   sidebar.setSkillsLoaded(12);
   sidebar.setMcpConnected(0);
-  const dock = sidebar.render(80).slice(-4).map((line) => line.replace(/\[\w+\]/g, "").replace(/^│\s?/, "").replace(/^─+$/, "─"));
+  const dock = sidebar.render(80).slice(-4).map((line) => strip(line).replace(/^─+$/, "─"));
   assert.deepEqual(dock, [
     "─",
     "Context",
