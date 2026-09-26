@@ -365,16 +365,15 @@ export class Sidebar implements Component {
       this.contextData.tokensPerSec,
     );
     const resources = formatContextResources(this.contextData.spend, this.skillsLoaded, this.mcpConnected);
-    if (height === 1) return [inscribedTitle("Context", width, this.paint(theme), "bottom")];
+    if (height === 1) return [theme ? this.body(tokens, width, theme, "muted") : tokens];
 
     const lines: string[] = [];
-    const body = height - 1;
-    const facts = [tokens, resources];
-    while (lines.length < Math.max(0, body - facts.length)) lines.push(this.decorateLine("", width, theme));
-    if (lines.length < body) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
-    if (lines.length < body) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
-    while (lines.length < body) lines.push(this.decorateLine("", width, theme));
-    lines.push(inscribedTitle("Context", width, this.paint(theme), "bottom"));
+    if (height >= 4 && theme) lines.push(this.rule(width, theme));
+    else if (height >= 4) lines.push("─".repeat(Math.max(0, width)));
+    lines.push(this.heading("Context", width, theme));
+    if (lines.length < height) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
+    if (lines.length < height) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
+    while (lines.length < height) lines.push(this.decorateLine("", width, theme));
     return lines.slice(0, height);
   }
 

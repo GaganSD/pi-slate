@@ -307,10 +307,10 @@ test("context dock keeps the heading, rule, and spend", () => {
   sidebar.setMcpConnected(0);
   const dock = sidebar.render(80).slice(-4).map((line) => strip(line).replace(/^─+$/, "─"));
   assert.deepEqual(dock, [
-    "",
+    "─",
+    "Context",
     "18,958 tokens · 2% used · 42 tokens/sec",
     "$1.23 · 12 skills loaded · 0 MCPs enabled",
-    "Context",
   ]);
 });
 
