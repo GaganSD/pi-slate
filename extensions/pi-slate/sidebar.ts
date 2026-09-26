@@ -365,15 +365,16 @@ export class Sidebar implements Component {
       this.contextData.tokensPerSec,
     );
     const resources = formatContextResources(this.contextData.spend, this.skillsLoaded, this.mcpConnected);
-    if (height === 1) return [theme ? this.body(tokens, width, theme, "muted") : tokens];
+    if (height === 1) return [inscribedTitle("Context", width, this.paint(theme), "bottom")];
 
     const lines: string[] = [];
-    if (height >= 4 && theme) lines.push(this.rule(width, theme));
-    else if (height >= 4) lines.push("─".repeat(Math.max(0, width)));
-    lines.push(this.heading("Context", width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
-    if (lines.length < height) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
-    while (lines.length < height) lines.push(this.decorateLine("", width, theme));
+    const body = height - 1;
+    const facts = [tokens, resources];
+    while (lines.length < Math.max(0, body - facts.length)) lines.push(this.decorateLine("", width, theme));
+    if (lines.length < body) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
+    if (lines.length < body) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
+    while (lines.length < body) lines.push(this.decorateLine("", width, theme));
+    lines.push(inscribedTitle("Context", width, this.paint(theme), "bottom"));
     return lines.slice(0, height);
   }
 
@@ -402,7 +403,7 @@ export class Sidebar implements Component {
       return this.body(text, width, theme, clickable ? "muted" : "dim");
     });
     const extra = Math.max(0, height - (1 + files.length + 1 + impact.length));
-    const lines = [this.heading("Summary", width, theme)];
+    const lines = [inscribedTitle("Summary", width, this.paint(theme), "top")];
     if (extra > 0) lines.push(empty);
     this.lastSlots = { ...this.lastSlots, filesStart: lines.length };
     lines.push(...files);
