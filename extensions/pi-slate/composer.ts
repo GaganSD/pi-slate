@@ -12,6 +12,16 @@ export function composerPaddingX(density: "comfortable" | "compact"): number {
   return density === "compact" ? 2 : 4;
 }
 
+let lastComposerFrameLines = 3;
+
+export function composerFrameLineCount(): number {
+  return lastComposerFrameLines;
+}
+
+export function noteComposerFrameLines(count: number): void {
+  lastComposerFrameLines = Math.max(3, Math.floor(count));
+}
+
 export function frameRow(body: string, width: number, paint: (text: string) => string): string {
   if (width <= 0) return "";
   if (width === 1) return paint("│");
@@ -102,12 +112,12 @@ export function frameComposerLines(
   if (lines.length < 2) return lines;
   let bottom = -1;
   for (let i = lines.length - 1; i >= 1; i--) {
-    if (stripVTControlCharacters(lines[i] ?? "").startsWith("╰")) {
+    if (stripVTControlCharacters(lines[i] ?? "").includes("╰")) {
       bottom = i;
       break;
     }
   }
-  if (bottom < 1) return lines;
+  if (bottom < 1) bottom = lines.length - 1;
 
   const out = lines.slice();
   const prompt = opts.empty && opts.paddingX >= 4;
@@ -123,7 +133,9 @@ function sideBorder(line: string, width: number, paint: (text: string) => string
   let body = line.startsWith(prefix) ? line.slice(leftCols) : line;
   if (body.endsWith(" ")) body = body.slice(0, -1);
   const left = prompt ? `${paint("│")} › ` : paint("│");
-  const gap = Math.max(0, width - leftCols - 1 - visibleWidth(body));
+  const inner = Math.max(0, width - leftCols - 1);
+  if (visibleWidth(body) > inner) body = truncateToWidth(body, inner, "");
+  const gap = Math.max(0, inner - visibleWidth(body));
   return `${left}${body}${" ".repeat(gap)}${paint("│")}`;
 }
 
@@ -173,11 +185,13 @@ export class ComposerEditor extends CustomEditor {
   }
 
   render(width: number): string[] {
-    return frameComposerLines(super.render(width), {
+    const lines = frameComposerLines(super.render(width), {
       width,
       empty: this.getText().length === 0,
       paddingX: this.getPaddingX(),
       paint: (text) => this.borderColor(text),
     });
+    noteComposerFrameLines(lines.length);
+    return lines;
   }
 }

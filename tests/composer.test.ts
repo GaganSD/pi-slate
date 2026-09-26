@@ -86,6 +86,18 @@ test("composer keeps a one-cell reverse cursor", () => {
   assert.equal(visibleWidth(body), width);
 });
 
+test("composer pins a right rail even when the source line is full width", () => {
+  const width = 20;
+  const lines = frameComposerLines(
+    ["╭" + "─".repeat(width - 2) + "╮", "x".repeat(width), "╰" + "─".repeat(width - 2) + "╯"],
+    { width, empty: false, paddingX: 4, paint: (text) => text },
+  );
+  const body = stripVTControlCharacters(lines[1] ?? "");
+  assert.equal(body.startsWith("│"), true);
+  assert.equal(body.endsWith("│"), true);
+  assert.equal(visibleWidth(lines[1] ?? ""), width);
+});
+
 test("typed composer drops the prompt and hint", () => {
   const width = 20;
   const lines = frameComposerLines(
