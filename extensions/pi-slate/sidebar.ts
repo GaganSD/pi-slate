@@ -43,7 +43,7 @@ import {
   sidebarRowSlots,
   splitSidebarContent,
 } from "./workspace-layout.ts";
-import { frameRow, inscribedTitle } from "./composer.ts";
+import { composerFrameLineCount, frameRow, inscribedTitle } from "./composer.ts";
 
 const KITTY_PREFIX = "\x1b_G";
 const CLEAR = "[clear]";
@@ -316,7 +316,8 @@ export class Sidebar implements Component {
     this.syncOverlayWidth();
     const theme = this.theme;
     const height = Math.max(1, this.tui?.terminal.rows ?? 1);
-    const { contentHeight, dockHeight } = sidebarRowSlots(height, SIDEBAR_DOCK_LINES);
+    const dockWant = this.splitActive ? Math.max(3, composerFrameLineCount()) : SIDEBAR_DOCK_LINES;
+    const { contentHeight, dockHeight } = sidebarRowSlots(height, dockWant);
     const contentKey = `${width}x${contentHeight}:${this.filesRev}:${this.filesOffset}:${this.turnImpact.revision}:${this.effectiveView()?.id ?? ""}:${this.selectedFileKey ?? ""}:${this.selectedActivityRow ?? ""}`;
     const dockKey = `${width}x${dockHeight}:${this.contextData.tokens}:${this.contextData.percent}:${this.contextData.spend}:${Math.round(this.contextData.tokensPerSec)}:${this.skillsLoaded}:${this.mcpConnected}`;
     const content = this.contentCached?.key === contentKey
@@ -368,12 +369,17 @@ export class Sidebar implements Component {
     const paint = this.paint(theme);
     if (height === 1) return [inscribedTitle("Context", width, paint, "bottom")];
 
-    const lines = [inscribedTitle("Context", width, paint, "top")];
-    const body = height - 1;
-    if (lines.length < body) lines.push(theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme));
-    if (lines.length < body) lines.push(theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme));
-    while (lines.length < body) lines.push(this.decorateLine("", width, theme));
-    lines.push(inscribedTitle("", width, paint, "bottom"));
+    const facts = [
+      theme ? this.body(tokens, width, theme, "muted") : this.decorateLine(tokens, width, theme),
+      theme ? this.body(resources, width, theme, "dim") : this.decorateLine(resources, width, theme),
+    ];
+    const lines: string[] = [];
+    if (height >= 4) lines.push(inscribedTitle("Context", width, paint, "top"));
+    const inner = height - 1;
+    const factCount = Math.min(facts.length, Math.max(0, inner - lines.length));
+    while (lines.length + factCount < inner) lines.push(this.decorateLine("", width, theme));
+    lines.push(...facts.slice(0, factCount));
+    lines.push(inscribedTitle(height >= 4 ? "" : "Context", width, paint, "bottom"));
     return lines.slice(0, height);
   }
 

@@ -12,6 +12,16 @@ export function composerPaddingX(density: "comfortable" | "compact"): number {
   return density === "compact" ? 2 : 4;
 }
 
+let lastComposerFrameLines = 3;
+
+export function composerFrameLineCount(): number {
+  return lastComposerFrameLines;
+}
+
+export function noteComposerFrameLines(count: number): void {
+  lastComposerFrameLines = Math.max(3, Math.floor(count));
+}
+
 export function frameRow(body: string, width: number, paint: (text: string) => string): string {
   if (width <= 0) return "";
   if (width === 1) return paint("│");
@@ -175,11 +185,13 @@ export class ComposerEditor extends CustomEditor {
   }
 
   render(width: number): string[] {
-    return frameComposerLines(super.render(width), {
+    const lines = frameComposerLines(super.render(width), {
       width,
       empty: this.getText().length === 0,
       paddingX: this.getPaddingX(),
       paint: (text) => this.borderColor(text),
     });
+    noteComposerFrameLines(lines.length);
+    return lines;
   }
 }
