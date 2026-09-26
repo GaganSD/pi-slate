@@ -109,6 +109,7 @@ function fixture(
       assert(lines.every((line) => !line.includes("SIDEBAR")));
     }
     assert(lines.at(-1)!.startsWith("footer"), "Footer must stay docked");
+    assert(!lines.at(-1)!.includes("SIDEBAR"), "Input dock spans the full width");
   }
   return { terminal, tui, chat, messages, reformats, widths, scroll, editor, pane, main, reset, assertCached, assertFrame };
 }

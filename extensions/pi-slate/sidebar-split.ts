@@ -1,5 +1,6 @@
 import {
   HStack,
+  VStack,
   isViewportTUI,
   type Component,
   type TUI,
@@ -12,6 +13,7 @@ import {
 } from "./layout.ts";
 
 const SIDEBAR_SPLIT = Symbol.for("pi-slate.sidebar-split");
+const SPLIT_ORIGINAL = Symbol.for("pi-slate.split-original");
 const ORIGINAL_SET_LAYOUT_ROOT = Symbol.for("pi-slate.setLayoutRoot");
 const SPLIT_OWNER = Symbol.for("pi-slate.sidebar-split-owner");
 
@@ -99,8 +101,39 @@ function isSplit(component: Component | undefined): component is SidebarSplit {
 
 export function splitChat(component: Component | undefined): Component | undefined {
   if (!component) return undefined;
+  const original = originalRoot(component);
+  if (original) return original;
   if (!isSplit(component)) return component;
   return component.chat();
+}
+
+function originalRoot(component: Component): Component | undefined {
+  return (component as { [SPLIT_ORIGINAL]?: Component })[SPLIT_ORIGINAL];
+}
+
+function wrapSplit(
+  component: Component | undefined,
+  pane: Component,
+  preferredWidth?: () => number | undefined,
+): Component | undefined {
+  const root = splitChat(component);
+  if (!root) return component;
+  if (root instanceof VStack && root.children.length === 2) {
+    const [transcript, dock] = root.children;
+    const docked = new VStack([
+      {
+        component: new SidebarSplit(transcript, pane, preferredWidth),
+        basis: 0,
+        grow: 1,
+        shrink: 1,
+        minSize: 1,
+      },
+      { component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+    ]);
+    Object.assign(docked, { [SPLIT_ORIGINAL]: root });
+    return docked;
+  }
+  return new SidebarSplit(root, pane, preferredWidth);
 }
 
 export function installSidebarSplit(
@@ -112,10 +145,7 @@ export function installSidebarSplit(
 
   return bindSplitHost(
     tui,
-    (component) => {
-      const chat = splitChat(component);
-      return chat ? new SidebarSplit(chat, pane, preferredWidth) : component;
-    },
+    (component) => wrapSplit(component, pane, preferredWidth),
     splitChat,
   );
 }
