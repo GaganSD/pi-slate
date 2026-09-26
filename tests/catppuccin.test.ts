@@ -34,8 +34,8 @@ const REQUIRED_COLORS = [
 
 test("flavor and style names stay official", () => {
   assert.equal(parseFlavor("Mocha"), "mocha");
-  assert.equal(parseFlavor("Frappé"), "frappe");
-  assert.equal(parseFlavor("frappe"), "frappe");
+  assert.equal(parseFlavor("Latte"), "latte");
+  assert.equal(parseFlavor("frappe"), undefined);
   assert.equal(parseStyle("Mauve"), "mauve");
   assert.equal(parseFlavor("ink"), undefined);
   assert.equal(parseStyle("ember"), undefined);
@@ -43,8 +43,8 @@ test("flavor and style names stay official", () => {
 
 test("theme names encode flavor and style", () => {
   assert.equal(catppuccinThemeName("mocha", "mauve"), "catppuccin-mocha-mauve");
-  assert.deepEqual(parseCatppuccinTheme("catppuccin-macchiato-quiet"), {
-    flavor: "macchiato",
+  assert.deepEqual(parseCatppuccinTheme("catppuccin-latte-quiet"), {
+    flavor: "latte",
     style: "quiet",
   });
   assert.equal(parseCatppuccinTheme("pi-slate"), undefined);

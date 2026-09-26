@@ -196,7 +196,7 @@ export const SLATE_VERSION = JSON.parse(
 ).version as string;
 
 export const SLATE_USAGE =
-  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>] | message-length [default|all|<count>] | theme [latte|frappe|macchiato|mocha] [canonical|quiet|mauve|sapphire|peach|teal] | flavor [latte|frappe|macchiato|mocha] | style [canonical|quiet|mauve|sapphire|peach|teal] | bug [file|open]";
+  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>] | message-length [default|all|<count>] | theme [latte|mocha] [canonical|quiet|mauve|sapphire|peach|teal] | flavor [latte|mocha] | style [canonical|quiet|mauve|sapphire|peach|teal] | bug [file|open]";
 
 export function withCurrent(label: string, current: boolean): string {
   return current ? `${label} (current)` : label;
@@ -206,7 +206,7 @@ export function withoutCurrent(label: string): string {
   return label.endsWith(" (current)") ? label.slice(0, -" (current)".length) : label;
 }
 
-const THEME_FLAVORS = ["latte", "frappe", "macchiato", "mocha"] as const;
+const THEME_FLAVORS = ["latte", "mocha"] as const;
 const THEME_STYLES = ["canonical", "quiet", "mauve", "sapphire", "peach", "teal"] as const;
 const SLATE_COMPLETIONS = [
   "density",
