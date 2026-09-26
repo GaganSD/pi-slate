@@ -8,6 +8,12 @@ import { parseFlavor, parseStyle, type Flavor, type Style } from "./catppuccin.t
 export const PI_LOGO = ["██████  ", "██  ██  ", "████  ██", "██    ██"];
 export const PI_LOGO_ASCII = ["######  ", "##  ##  ", "####  ##", "##    ##"];
 
+/** Logo mark stays white in every theme. */
+export function paintLogo(text: string, truecolor = true): string {
+  if (!text) return text;
+  return truecolor ? `\x1b[38;2;255;255;255m${text}\x1b[39m` : `\x1b[97m${text}\x1b[39m`;
+}
+
 export function compactPath(cwd: string | undefined, home?: string): string {
   if (!cwd) return "";
   if (home && (cwd === home || cwd.startsWith(`${home}/`))) {
@@ -196,7 +202,7 @@ export const SLATE_VERSION = JSON.parse(
 ).version as string;
 
 export const SLATE_USAGE =
-  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>] | message-length [default|all|<count>] | theme [latte|mocha] [canonical|quiet|mauve|sapphire|peach|teal] | flavor [latte|mocha] | style [canonical|quiet|mauve|sapphire|peach|teal] | bug [file|open]";
+  "Usage: /slate density [comfortable|compact] | footer [standard|minimal] | width [default|narrow|medium|wide|<percent>] | message-length [default|all|<count>] | theme [canonical|quiet|mauve|sapphire|peach|teal] | style [canonical|quiet|mauve|sapphire|peach|teal] | bug [file|open]";
 
 export function withCurrent(label: string, current: boolean): string {
   return current ? `${label} (current)` : label;
@@ -206,7 +212,6 @@ export function withoutCurrent(label: string): string {
   return label.endsWith(" (current)") ? label.slice(0, -" (current)".length) : label;
 }
 
-const THEME_FLAVORS = ["latte", "mocha"] as const;
 const THEME_STYLES = ["canonical", "quiet", "mauve", "sapphire", "peach", "teal"] as const;
 const SLATE_COMPLETIONS = [
   "density",
@@ -224,12 +229,7 @@ const SLATE_COMPLETIONS = [
   "message-length default",
   "message-length all",
   "theme",
-  ...THEME_FLAVORS.flatMap((flavor) => [
-    `theme ${flavor}`,
-    ...THEME_STYLES.map((style) => `theme ${flavor} ${style}`),
-  ]),
-  "flavor",
-  ...THEME_FLAVORS.map((flavor) => `flavor ${flavor}`),
+  ...THEME_STYLES.map((style) => `theme ${style}`),
   "style",
   ...THEME_STYLES.map((style) => `style ${style}`),
   "bug",
@@ -247,7 +247,6 @@ export type SlateArgs =
   | { ok: true; kind: "message-length"; value?: number | "all" }
   | { ok: true; kind: "theme-menu" }
   | { ok: true; kind: "theme"; flavor?: Flavor; style?: Style }
-  | { ok: true; kind: "flavor"; value?: Flavor }
   | { ok: true; kind: "style"; value?: Style }
   | { ok: true; kind: "bug-menu" }
   | { ok: true; kind: "bug"; action: "file" | "open" }
@@ -261,18 +260,16 @@ export function parseSlateArgs(raw: string): SlateArgs {
     if (words.length > 3) return { ok: false };
     if (!tail) return { ok: true, kind: "theme-menu" };
     const flavor = parseFlavor(tail);
-    if (!flavor) return { ok: false };
-    if (!extra) return { ok: true, kind: "theme", flavor };
-    const style = parseStyle(extra);
-    if (!style) return { ok: false };
-    return { ok: true, kind: "theme", flavor, style };
+    if (flavor) {
+      if (!extra) return { ok: true, kind: "theme", flavor };
+      const style = parseStyle(extra);
+      return style ? { ok: true, kind: "theme", flavor, style } : { ok: false };
+    }
+    const style = parseStyle(tail);
+    if (style && !extra) return { ok: true, kind: "theme", style };
+    return { ok: false };
   }
   if (words.length > 2) return { ok: false };
-  if (head === "flavor") {
-    if (!tail) return { ok: true, kind: "flavor" };
-    const flavor = parseFlavor(tail);
-    return flavor ? { ok: true, kind: "flavor", value: flavor } : { ok: false };
-  }
   if (head === "style") {
     if (!tail) return { ok: true, kind: "style" };
     const style = parseStyle(tail);

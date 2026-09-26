@@ -33,6 +33,7 @@ import {
   MCP_STATUS_EVENT,
   PI_LOGO,
   PI_LOGO_ASCII,
+  paintLogo,
   centerOffset,
   compactPath,
   countSkillCommands,
@@ -67,8 +68,6 @@ import {
 } from "./bug.ts";
 import { syncMessageWindow, type MessageWindow } from "./message-window.ts";
 import {
-  FLAVOR_LABELS,
-  FLAVORS,
   STYLE_LABELS,
   STYLES,
   resolveCatppuccinTheme,
@@ -167,7 +166,7 @@ class MinimalHeader implements Component {
       : PI_LOGO;
     const column = this.columnWidth(width);
     return [
-      ...logoLines.map((line) => centeredLine(this.theme.fg("accent", line), column)),
+      ...logoLines.map((line) => centeredLine(paintLogo(line, this.theme.getColorMode() === "truecolor"), column)),
       "",
       centeredLine(this.theme.fg("muted", `Pi Agent v${VERSION}`), column),
       centeredLine(
@@ -529,17 +528,6 @@ export default function piSlate(pi: ExtensionAPI): void {
 
   const currentCatppuccin = (ctx: ExtensionContext) => resolveCatppuccinTheme(ctx.ui.theme.name);
 
-  const pickFlavor = async (ctx: ExtensionContext): Promise<Flavor | undefined> => {
-    const current = currentCatppuccin(ctx).flavor;
-    const value = await ctx.ui.select(
-      "Flavor",
-      FLAVORS.map((flavor) => withCurrent(FLAVOR_LABELS[flavor], flavor === current)),
-    );
-    if (!value) return undefined;
-    const key = withoutCurrent(value);
-    return FLAVORS.find((flavor) => FLAVOR_LABELS[flavor] === key);
-  };
-
   const pickStyle = async (ctx: ExtensionContext): Promise<Style | undefined> => {
     const current = currentCatppuccin(ctx).style;
     const value = await ctx.ui.select(
@@ -742,26 +730,16 @@ export default function piSlate(pi: ExtensionAPI): void {
       }
 
       if (kind === "theme-menu") {
-        const flavor = await pickFlavor(ctx);
-        if (!flavor) return;
         const style = await pickStyle(ctx);
         if (!style) return;
-        applyCatppuccin(ctx, flavor, style);
+        applyCatppuccin(ctx, currentCatppuccin(ctx).flavor, style);
         return;
       }
 
       if (parsed.kind === "theme") {
-        const flavor = parsed.flavor ?? await pickFlavor(ctx);
-        if (!flavor) return;
-        const style = parsed.style ?? currentCatppuccin(ctx).style;
-        applyCatppuccin(ctx, flavor, style);
-        return;
-      }
-
-      if (kind === "flavor") {
-        const flavor = (parsed.kind === "flavor" ? parsed.value : undefined) ?? await pickFlavor(ctx);
-        if (!flavor) return;
-        applyCatppuccin(ctx, flavor, currentCatppuccin(ctx).style);
+        const style = parsed.style ?? (parsed.flavor ? currentCatppuccin(ctx).style : await pickStyle(ctx));
+        if (!style) return;
+        applyCatppuccin(ctx, parsed.flavor ?? currentCatppuccin(ctx).flavor, style);
         return;
       }
 

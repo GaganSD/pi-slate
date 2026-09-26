@@ -59,20 +59,18 @@ Slate keeps usage and spend visible at the bottom. Context usage may be estimate
 
 ### Catppuccin Themes
 
-The prompt, Summary, and Context share one frame. Themes are official [Catppuccin](https://catppuccin.com/palette/) tokens only.
+The prompt, Summary, and Context share one frame. The Pi logo stays white in every theme. Colors are official [Catppuccin Mocha](https://catppuccin.com/palette/) tokens only.
 
-- **Flavor:** Latte (light) or Mocha (dark)
-- **Style:** Canonical, Quiet, Mauve, Sapphire, Peach, Teal
+Six styles: Canonical, Quiet, Mauve, Sapphire, Peach, Teal.
 
-`/slate` → Theme walks flavor, then style. Or set them directly:
+`/slate` → Theme picks a style. Or set it directly:
 
 ```text
-/slate theme mocha mauve
-/slate flavor latte
+/slate theme mauve
 /slate style quiet
 ```
 
-`flavor` and `style` keep the other axis. Selection is saved and also appears in `/settings` as `catppuccin-<flavor>-<style>`.
+Selection is saved and also appears in `/settings` as `catppuccin-mocha-<style>`.
 
 ## Commands
 
@@ -84,7 +82,7 @@ The prompt, Summary, and Context share one frame. Themes are official [Catppucci
 | Message length | `/slate message-length [default\|all\|<count>]` | How many chat messages stay on screen. `default` is 100. |
 | Density | `/slate density [comfortable\|compact]` | Comfortable shows a › prompt in the composer; compact is tighter. |
 | Footer | `/slate footer [standard\|minimal]` | Standard shows model and thinking on the composer; minimal hides them. |
-| Theme | `/slate theme [latte\|mocha] [canonical\|quiet\|mauve\|sapphire\|peach\|teal]` | Catppuccin flavor and style. `/slate flavor` and `/slate style` toggle one axis. |
+| Theme | `/slate theme [canonical\|quiet\|mauve\|sapphire\|peach\|teal]` | Mocha style. `/slate style` is the same switch. |
 | Bugs | `/slate bug [file\|open]` | Copy a bug report, or open the npm package page. |
 
 ## Minimal By Design

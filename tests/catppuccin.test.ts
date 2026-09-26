@@ -34,7 +34,7 @@ const REQUIRED_COLORS = [
 
 test("flavor and style names stay official", () => {
   assert.equal(parseFlavor("Mocha"), "mocha");
-  assert.equal(parseFlavor("Latte"), "latte");
+  assert.equal(parseFlavor("latte"), undefined);
   assert.equal(parseFlavor("frappe"), undefined);
   assert.equal(parseStyle("Mauve"), "mauve");
   assert.equal(parseFlavor("ink"), undefined);
@@ -43,20 +43,21 @@ test("flavor and style names stay official", () => {
 
 test("theme names encode flavor and style", () => {
   assert.equal(catppuccinThemeName("mocha", "mauve"), "catppuccin-mocha-mauve");
-  assert.deepEqual(parseCatppuccinTheme("catppuccin-latte-quiet"), {
-    flavor: "latte",
+  assert.deepEqual(parseCatppuccinTheme("catppuccin-mocha-quiet"), {
+    flavor: "mocha",
     style: "quiet",
   });
+  assert.equal(parseCatppuccinTheme("catppuccin-latte-quiet"), undefined);
   assert.equal(parseCatppuccinTheme("pi-slate"), undefined);
   assert.deepEqual(resolveCatppuccinTheme("pi-slate"), {
     flavor: DEFAULT_FLAVOR,
     style: DEFAULT_STYLE,
     name: "catppuccin-mocha-mauve",
   });
-  assert.deepEqual(resolveCatppuccinTheme("catppuccin-latte-teal", undefined, "peach"), {
-    flavor: "latte",
+  assert.deepEqual(resolveCatppuccinTheme("catppuccin-mocha-teal", undefined, "peach"), {
+    flavor: "mocha",
     style: "peach",
-    name: "catppuccin-latte-peach",
+    name: "catppuccin-mocha-peach",
   });
   assert.equal(themeMessage("mocha", "mauve"), "Theme set to Mocha · Mauve");
 });

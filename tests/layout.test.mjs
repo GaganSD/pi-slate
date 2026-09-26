@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   PI_LOGO,
   PI_LOGO_ASCII,
+  paintLogo,
   centerOffset,
   compactDisplayText,
   compactPath,
@@ -58,6 +59,8 @@ test("logo preserves the official four-row geometry and terminal aspect ratio", 
   assert.ok(PI_LOGO.every((line) => line.length === 8));
   assert.ok(PI_LOGO_ASCII.every((line) => line.length === 8));
   assert.ok(PI_LOGO_ASCII.every((line) => /^[ #]+$/.test(line)));
+  assert.equal(paintLogo("π"), "\x1b[38;2;255;255;255mπ\x1b[39m");
+  assert.equal(paintLogo("π", false), "\x1b[97mπ\x1b[39m");
 });
 
 test("header content is centered without negative padding", () => {
@@ -178,20 +181,15 @@ test("/slate args route density, footer, and width", () => {
   assert.deepEqual(parseSlateArgs("bug open"), { ok: true, kind: "bug", action: "open" });
   assert.deepEqual(parseSlateArgs("theme"), { ok: true, kind: "theme-menu" });
   assert.deepEqual(parseSlateArgs("theme mocha"), { ok: true, kind: "theme", flavor: "mocha" });
+  assert.deepEqual(parseSlateArgs("theme mauve"), { ok: true, kind: "theme", style: "mauve" });
   assert.deepEqual(parseSlateArgs("theme mocha mauve"), {
     ok: true,
     kind: "theme",
     flavor: "mocha",
     style: "mauve",
   });
-  assert.deepEqual(parseSlateArgs("theme latte quiet"), {
-    ok: true,
-    kind: "theme",
-    flavor: "latte",
-    style: "quiet",
-  });
-  assert.deepEqual(parseSlateArgs("theme frappe quiet"), { ok: false });
-  assert.deepEqual(parseSlateArgs("flavor latte"), { ok: true, kind: "flavor", value: "latte" });
+  assert.deepEqual(parseSlateArgs("theme latte quiet"), { ok: false });
+  assert.deepEqual(parseSlateArgs("flavor mocha"), { ok: false });
   assert.deepEqual(parseSlateArgs("style sapphire"), { ok: true, kind: "style", value: "sapphire" });
   assert.deepEqual(parseSlateArgs("theme nope"), { ok: false });
   assert.deepEqual(parseSlateArgs("theme mocha mauve extra"), { ok: false });

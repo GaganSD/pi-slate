@@ -1,11 +1,10 @@
-export const FLAVORS = ["latte", "mocha"] as const;
+export const FLAVORS = ["mocha"] as const;
 export const STYLES = ["canonical", "quiet", "mauve", "sapphire", "peach", "teal"] as const;
 
 export type Flavor = (typeof FLAVORS)[number];
 export type Style = (typeof STYLES)[number];
 
 export const FLAVOR_LABELS: Record<Flavor, string> = {
-  latte: "Latte",
   mocha: "Mocha",
 };
 
@@ -30,15 +29,6 @@ type Swatch =
 type Palette = Record<Swatch, string>;
 
 const PALETTES: Record<Flavor, Palette> = {
-  latte: {
-    rosewater: "#dc8a78", flamingo: "#dd7878", pink: "#ea76cb", mauve: "#8839ef",
-    red: "#d20f39", maroon: "#e64553", peach: "#fe640b", yellow: "#df8e1d",
-    green: "#40a02b", teal: "#179299", sky: "#04a5e5", sapphire: "#209fb5",
-    blue: "#1e66f5", lavender: "#7287fd", text: "#4c4f69", subtext1: "#5c5f77",
-    subtext0: "#6c6f85", overlay2: "#7c7f93", overlay1: "#8c8fa1", overlay0: "#9ca0b0",
-    surface2: "#acb0be", surface1: "#bcc0cc", surface0: "#ccd0da",
-    base: "#eff1f5", mantle: "#e6e9ef", crust: "#dce0e8",
-  },
   mocha: {
     rosewater: "#f5e0dc", flamingo: "#f2cdcd", pink: "#f5c2e7", mauve: "#cba6f7",
     red: "#f38ba8", maroon: "#eba0ac", peach: "#fab387", yellow: "#f9e2af",
