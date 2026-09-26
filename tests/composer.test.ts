@@ -7,7 +7,9 @@ import {
   composerLabels,
   composerPaddingX,
   frameComposerLines,
+  frameRow,
   inscribedBorder,
+  inscribedTitle,
 } from "../extensions/pi-slate/composer.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
@@ -96,6 +98,22 @@ test("typed composer drops the prompt and hint", () => {
   assert.equal(body.startsWith("│"), true);
   assert.doesNotMatch(body, /›/);
   assert.doesNotMatch(lines.join("\n"), /send/);
+});
+
+test("frameRow closes both sides and keeps a reverse-video cell intact", () => {
+  const width = 20;
+  const row = frameRow(` hi \x1b[7m \x1b[0m`, width, (text) => text);
+  assert.equal(row.startsWith("│"), true);
+  assert.equal(row.endsWith("│"), true);
+  assert.match(row, /\x1b\[7m \x1b\[0m/);
+  assert.equal(visibleWidth(row), width);
+});
+
+test("inscribed titles use composer corners", () => {
+  assert.equal(visibleWidth(inscribedTitle("Summary", 16, (text) => text, "top")), 16);
+  assert.match(inscribedTitle("Summary", 16, (text) => text, "top"), /^╭─ Summary /);
+  assert.ok(inscribedTitle("Preview", 16, (text) => text, "mid").startsWith("├"));
+  assert.ok(inscribedTitle("Context", 20, (text) => text, "bottom", "0%").endsWith("╯"));
 });
 
 

@@ -14,6 +14,28 @@ export function composerPaddingX(density: "comfortable" | "compact"): number {
   return density === "compact" ? 2 : 4;
 }
 
+export function frameRow(body: string, width: number, paint: (text: string) => string): string {
+  if (width <= 0) return "";
+  if (width === 1) return paint("│");
+  const inner = Math.max(0, width - 2);
+  const text = visibleWidth(body) > inner ? truncateToWidth(body, inner, "") : body;
+  const gap = Math.max(0, inner - visibleWidth(text));
+  return `${paint("│")}${text}${" ".repeat(gap)}${paint("│")}`;
+}
+
+export function inscribedTitle(
+  title: string,
+  width: number,
+  paint: (text: string) => string,
+  kind: "top" | "mid" | "bottom",
+  right = "",
+): string {
+  const ends = { top: ["╭", "╮"], mid: ["├", "┤"], bottom: ["╰", "╯"] }[kind];
+  const left = title ? `─ ${title} ` : "";
+  const tail = right ? ` ${right} ` : "";
+  return inscribedBorder(left, tail, width, paint, ends[0]!, ends[1]!);
+}
+
 export function inscribedBorder(
   left: string,
   right: string,
